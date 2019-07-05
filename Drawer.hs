@@ -30,11 +30,11 @@ type Degrees = Integer
 myCursor = Cursor (0.0, 0.0) 0.0
 myDrawer = Drawer myCursor 70.0 (Pictures [Blank])
 
-makeDegrees :: Integer -> Integer
-makeDegrees a = a `mod` 360
+makeDegrees :: Float -> Float
+makeDegrees a = a `mod'` 360.0
 
 rotate :: Float -> Cursor -> Cursor
-rotate angle c = Cursor (anchor c) ((orientation c + angle) `mod'` 360.0)
+rotate angle c = Cursor (anchor c) (makeDegrees (orientation c + angle))
 
 rotateLeft :: Float -> State Drawer ()
 rotateLeft angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate angle c) l p)
@@ -43,11 +43,9 @@ rotateRight :: Float -> State Drawer ()
 rotateRight angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate (360.0 - angle) c) l p)
 
 moveForward :: State Drawer ()
---moveForward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (orientation c) l (anchor c)) (orientation c)) l p)
-moveForward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (((orientation c)+180.0)`mod'`360.0) l (anchor c)) (orientation c)) l p)
+moveForward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (makeDegrees ((orientation c)+180.0)) l (anchor c)) (orientation c)) l p)
 
 moveBackward :: State Drawer ()
---moveBackward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (((orientation c)+180.0)`mod'`360.0) l (anchor c)) (orientation c)) l p)
 moveBackward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (orientation c) l (anchor c)) (orientation c)) l p)
 
 move :: Float -> Float -> Point -> Point
