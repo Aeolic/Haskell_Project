@@ -5,8 +5,114 @@ import Data.List
 import Data.Maybe
 import Data.Char
 import Control.Monad.State
+import Control.Monad.Writer
 import qualified Data.Map as M
 import ParserCon
+
+exampleMap :: M.Map Char [Atom]
+exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'  ] M.empty
+
+-- Axiom, Angle, Map mit Befehlen -> Generation -> IO ()
+executeDrawing :: Char -> Integer -> Memory -> Integer -> IO ()
+executeDrawing ax ang mem gen = do 
+                                putStrLn "Starting"
+                                abc <- evalAtoms (M.findWithDefault [] ax mem) mem gen 0
+                                putStrLn "Done"
+
+
+exampleString = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y"
+
+type Log = [String]
+type Memory = M.Map Char [Atom]
+type Logging = WriterT Log (State Memory)
+--type Logging s = Writer Log s
+
+getMap = snd (runIt exampleString)
+getNicePrint = mapM_ print $ snd $ fst $ runIt exampleString
+
+runIt s = runState (runWriterT (parseAndEvaluate s)) M.empty
+
+--runState (runWriterT (parseAndEvaluate s))
+
+parseAndEvaluate :: String -> Logging () -- (Char,Integer)???
+parseAndEvaluate s = case parseString s of
+                      Just p -> eval p
+                      Nothing -> do
+                                tell ["ERROR"]
+
+eval :: System -> Logging () 
+eval (System h r) = do
+                    tell ["Evaluating Headers"]
+                    headers <- evalHeaders h
+                    rules <- evalRules r
+                    return ()
+
+evalHeaders :: [Header] -> Logging ()
+evalHeaders [] = return ()
+evalHeaders (x:xs) = do
+                    evalFirst <- evalHeader x 
+                    evalRest <- evalHeaders xs
+                    return ()
+
+
+evalHeader :: Header -> Logging ()
+evalHeader h = case h of
+                Axiom ax -> do
+                            tell ["Found Axiom " ++ show ax]
+                Angle int -> do
+                            tell ["Found Angle " ++ show int] --TODO STORE
+
+
+evalRules :: [Rule] -> Logging ()
+evalRules [] = return ()
+evalRules (x:xs) = do
+                    evalFirst <- evalRule x
+                    evalRest <- evalRules xs
+                    return ()
+
+evalRule :: Rule -> Logging ()
+evalRule (Rule i atoms) = do -- store string in state
+            tell["Storing my atoms to given Id:" ++ show i]
+            oldMap <- get
+            let newMap = M.insert i atoms oldMap
+            put newMap
+            --a <- evalAtoms atoms -- wir hier nicht benötigt - execution ist unabhängig
+            tell ["Done storing atomes."]
+
+
+--TODO eigenen Datentyp für (Axiom, Header, Map)
+evalAtoms :: [Atom] -> M.Map Char [Atom] -> Integer -> Integer -> IO ()
+evalAtoms [] _ _ _ = return ()
+evalAtoms (x:xs) m gen counter =  if counter >= gen then return () else 
+                    do
+                    putStrLn $ show counter
+                    evalFirst <- evalAtom x m gen (counter)
+                    evalRest <- evalAtoms xs m gen (counter)
+                    return ()
+
+
+evalAtom :: Atom -> M.Map Char [Atom] -> Integer -> Integer -> IO ()
+evalAtom a m gen counter = case a of
+                Symb s -> do
+                            putStrLn $ debugString s
+                Ide c -> do
+                            evalAtoms (M.findWithDefault [] c m) m gen (counter+1)
+
+
+
+
+
+debugString :: Symbol -> String 
+debugString s = case s of
+                DrawF -> "Draw forward"
+                DrawB -> "Draw backward"
+                MoveF -> "Move forward"
+                MoveB -> "Move backward"
+                PlusR -> "Rotate right"
+                MinusR -> "Rotate left"
+                Push -> "Push pos"
+                Pop -> "Pop pos"
+
 
 -- ^ Parsing
 
