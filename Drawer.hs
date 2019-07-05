@@ -25,18 +25,22 @@ data Cursor = Cursor {anchor :: Point, orientation :: Float}
   deriving (Show)
 data Drawer = Drawer {cursor :: Cursor, lineLength :: Float, pic :: Picture}
   deriving(Show)
+type Degrees = Integer
 
 myCursor = Cursor (0.0, 0.0) 0.0
 myDrawer = Drawer myCursor 70.0 (Pictures [Blank])
+
+makeDegrees :: Integer -> Integer
+makeDegrees a = a `mod` 360
 
 rotate :: Float -> Cursor -> Cursor
 rotate angle c = Cursor (anchor c) ((orientation c + angle) `mod'` 360.0)
 
 rotateLeft :: Float -> State Drawer ()
-rotateLeft angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate (360.0 - angle) c) l p)
+rotateLeft angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate angle c) l p)
 
 rotateRight :: Float -> State Drawer ()
-rotateRight angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate angle c) l p)
+rotateRight angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate (360.0 - angle) c) l p)
 
 moveForward :: State Drawer ()
 --moveForward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (orientation c) l (anchor c)) (orientation c)) l p)
@@ -47,10 +51,10 @@ moveBackward :: State Drawer ()
 moveBackward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (orientation c) l (anchor c)) (orientation c)) l p)
 
 move :: Float -> Float -> Point -> Point
-move o l (x,y) = ((sin $ radians (-o)) * l + x, (cos $ (radians (-o))) * l + y)
+move o l (x,y) = ((cos $ radians o) * l + x, (sin $ (radians o)) * l + y)
 
 radians :: Float -> Float
-radians d = d * (pi/180)
+radians d = d * (pi/180.0)
 
 createLine :: Float -> Float -> Point -> Path
 createLine o l p = [p, move o l p]
@@ -60,9 +64,8 @@ drawForward :: State Drawer ()
 drawForward = do
              Drawer c l p <- get
              let path = createLine (orientation c) l (anchor c)
-             let newP = Rotate (orientation c) (Line path)
-             let newCP = last path
-             put (Drawer (Cursor newCP $ orientation c) l (Pictures [p, newP]))
+             let newAnchor = last path
+             put (Drawer (Cursor newAnchor $ orientation c) l (Pictures [p, Line path]))
              return ()
 
 
@@ -80,17 +83,12 @@ getPicture = state $ \d -> ((pic d), Drawer (cursor d) (lineLength d) (pic d))
 composePicture :: State Drawer Picture
 composePicture = do
   drawForward
-  drawForward
   rotateLeft 90.0
   drawForward
-  -- drawText "A"
-  -- moveForward
-  -- drawText "B"
-  -- moveForward
-  -- drawText "C"
-  -- moveForward
-  -- rotateLeft 30.0
-  -- drawText "D"
+  -- rotateLeft 90.0
+  -- drawForward
+  -- rotateLeft 90.0
+  -- drawForward
   getPicture
 
 drawPicture :: Picture -> IO ()
