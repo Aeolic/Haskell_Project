@@ -1,5 +1,5 @@
-module Drawer ( 
-
+module Drawer (
+  module Graphics.Gloss,
   Drawer,
   Cursor,
   rotateLeft,
@@ -11,7 +11,8 @@ module Drawer (
   drawText,
   getPicture,
   drawPicture,
-  execDrawing
+  execDrawing,
+  myDrawer
   )
 
 
@@ -79,9 +80,8 @@ getPicture = state $ \d -> ((pic d), Drawer (cursor d) (lineLength d) (pic d))
 composePicture :: State Drawer Picture
 composePicture = do
   drawForward
-  moveForward
   drawForward
-  rotateLeft 40.0
+  rotateLeft 90.0
   drawForward
   -- drawText "A"
   -- moveForward

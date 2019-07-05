@@ -14,11 +14,10 @@ exampleMap :: M.Map Char [Atom]
 exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'  ] M.empty
 
 -- Axiom, Angle, Map mit Befehlen -> Generation -> IO ()
-executeDrawing :: Char -> Integer -> Memory -> Integer -> IO ()
-executeDrawing ax ang mem gen = do 
-                                putStrLn "Starting"
+executeDrawing :: Char -> Integer -> Memory -> Integer -> State Drawer Picture
+executeDrawing ax ang mem gen = do
                                 abc <- evalAtoms (M.findWithDefault [] ax mem) mem gen 0
-                                putStrLn "Done"
+                                getPicture
 
 
 exampleString = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y"
@@ -41,7 +40,7 @@ parseAndEvaluate s = case parseString s of
                       Nothing -> do
                                 tell ["ERROR"]
 
-eval :: System -> Logging () 
+eval :: System -> Logging ()
 eval (System h r) = do
                     tell ["Evaluating Headers"]
                     headers <- evalHeaders h
@@ -51,7 +50,7 @@ eval (System h r) = do
 evalHeaders :: [Header] -> Logging ()
 evalHeaders [] = return ()
 evalHeaders (x:xs) = do
-                    evalFirst <- evalHeader x 
+                    evalFirst <- evalHeader x
                     evalRest <- evalHeaders xs
                     return ()
 
@@ -82,29 +81,36 @@ evalRule (Rule i atoms) = do -- store string in state
 
 
 --TODO eigenen Datentyp für (Axiom, Header, Map)
-evalAtoms :: [Atom] -> M.Map Char [Atom] -> Integer -> Integer -> IO ()
+evalAtoms :: [Atom] -> M.Map Char [Atom] -> Integer -> Integer -> State Drawer ()
 evalAtoms [] _ _ _ = return ()
-evalAtoms (x:xs) m gen counter =  if counter >= gen then return () else 
+evalAtoms (x:xs) m gen counter =  if counter >= gen then return () else
                     do
-                    putStrLn $ show counter
                     evalFirst <- evalAtom x m gen (counter)
                     evalRest <- evalAtoms xs m gen (counter)
                     return ()
 
 
-evalAtom :: Atom -> M.Map Char [Atom] -> Integer -> Integer -> IO ()
+evalAtom :: Atom -> M.Map Char [Atom] -> Integer -> Integer -> State Drawer ()
 evalAtom a m gen counter = case a of
                 Symb s -> do
-                            putStrLn $ debugString s
+                            symbolToDrawer s
                 Ide c -> do
                             evalAtoms (M.findWithDefault [] c m) m gen (counter+1)
 
 
 symbolToDrawer :: Symbol -> State Drawer ()
-symbolToDrawer = undefined
+symbolToDrawer s = case s of
+                DrawF -> drawForward
+                DrawB -> drawBackward
+                MoveF -> moveForward
+                MoveB -> moveBackward
+                PlusR -> rotateRight 90.0
+                MinusR -> rotateLeft 90.0
+                Push -> return ()
+                Pop -> return ()
 
 
-debugString :: Symbol -> String 
+debugString :: Symbol -> String
 debugString s = case s of
                 DrawF -> "Draw forward"
                 DrawB -> "Draw backward"
@@ -143,25 +149,25 @@ parser = System <$> many (parseHeader) <*> many1 (parseRule)
 
 
 parseAtom :: Parser Token Atom
-parseAtom = try (\token -> case token of 
-                              TSymb smb -> Just $ Symb smb 
+parseAtom = try (\token -> case token of
+                              TSymb smb -> Just $ Symb smb
                               TId id -> Just $ Ide id
                               _ -> Nothing) --could split into 2, might be necessary for rule parser
 
 parseId :: Parser Token Id
-parseId = try (\token -> case token of 
+parseId = try (\token -> case token of
                               TId id -> Just id
                               _ -> Nothing)
 
 parseRule :: Parser Token Rule --(Id parser?, many1 or many?)
-parseRule = Rule <$> (parseId <* lit TAsgn) <*> (many1 parseAtom) 
+parseRule = Rule <$> (parseId <* lit TAsgn) <*> (many1 parseAtom)
 
-parseHeader :: Parser Token Header 
-parseHeader = Axiom <$> (lit TAxiom *> parseId) 
+parseHeader :: Parser Token Header
+parseHeader = Axiom <$> (lit TAxiom *> parseId)
               <|> Angle <$> (lit TAngle *> parseNum)
 
 parseNum :: Parser Token NumI
-parseNum = try (\token -> case token of 
+parseNum = try (\token -> case token of
                               TNum x-> Just x
                               _ -> Nothing)
 
@@ -215,5 +221,5 @@ t_id :: Parser Char Token
 t_id = TId <$> satisfy isAlphaAndUpper -- übler hack!!! aber gerade keinen Plan wie das sonst gehen soll :D
 
 -- ^ Utilities
-string xs = foldr (liftA2 (:)) (pure []) $  map lit xs 
+string xs = foldr (liftA2 (:)) (pure []) $  map lit xs
 many1 p = (:) <$> p <*> many p
