@@ -1,4 +1,21 @@
+module Drawer ( 
 
+  Drawer,
+  Cursor,
+  rotateLeft,
+  rotateRight,
+  moveForward,
+  moveBackward,
+  drawForward,
+  drawBackward,
+  drawText,
+  getPicture,
+  drawPicture,
+  execDrawing
+  )
+
+
+where
 import Graphics.Gloss
 import Control.Monad.State
 import Data.Fixed
@@ -15,10 +32,10 @@ rotate :: Float -> Cursor -> Cursor
 rotate angle c = Cursor (anchor c) ((orientation c + angle) `mod'` 360.0)
 
 rotateLeft :: Float -> State Drawer ()
-rotateLeft angle = state $ \(Drawer c l p) -> ((), Drawer (Main.rotate (360.0 - angle) c) l p)
+rotateLeft angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate (360.0 - angle) c) l p)
 
 rotateRight :: Float -> State Drawer ()
-rotateRight angle = state $ \(Drawer c l p) -> ((), Drawer (Main.rotate angle c) l p)
+rotateRight angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate angle c) l p)
 
 moveForward :: State Drawer ()
 --moveForward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (orientation c) l (anchor c)) (orientation c)) l p)
@@ -38,7 +55,17 @@ createLine :: Float -> Float -> Point -> Path
 createLine o l p = [p, move o l p]
 
 drawForward :: State Drawer ()
-drawForward = state $ \(Drawer c l p) -> ((), Drawer c l (Pictures [p,  Rotate (orientation c) (Line $ createLine (orientation c) l (anchor c))]))
+--drawForward = state $ \(Drawer c l p) -> ((), Drawer c l (Pictures [p,  Rotate (orientation c) (Line $ createLine (orientation c) l (anchor c))]))
+drawForward = do
+             Drawer c l p <- get
+             let path = createLine (orientation c) l (anchor c)
+             let newP = Rotate (orientation c) (Line path)
+             let newCP = last path
+             put (Drawer (Cursor newCP $ orientation c) l (Pictures [p, newP]))
+             return ()
+
+
+
 
 drawBackward :: State Drawer ()
 drawBackward = undefined
@@ -68,4 +95,5 @@ composePicture = do
 
 drawPicture :: Picture -> IO ()
 drawPicture p = display (InWindow "My Window" (300, 300) (10, 10)) white $ p
--- drawPicture $ fst $ runState composePicture myDrawer
+
+execDrawing = drawPicture $ fst $ runState composePicture myDrawer

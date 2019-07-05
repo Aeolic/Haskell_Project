@@ -8,6 +8,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Map as M
 import ParserCon
+import Drawer
 
 exampleMap :: M.Map Char [Atom]
 exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'  ] M.empty
@@ -99,7 +100,8 @@ evalAtom a m gen counter = case a of
                             evalAtoms (M.findWithDefault [] c m) m gen (counter+1)
 
 
-
+symbolToDrawer :: Symbol -> State Drawer ()
+symbolToDrawer = undefined
 
 
 debugString :: Symbol -> String 
