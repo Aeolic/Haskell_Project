@@ -8,23 +8,89 @@ import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Map as M
 import ParserCon
-import Drawer
+import DrawerM
 
 exampleMap :: M.Map Char [Atom]
-exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'  ] M.empty
+exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'] M.empty
+
+dragonMap :: M.Map Char [Atom]
+dragonMap = M.insert 'X' [Ide 'X', Symb PlusR, Ide 'Y', Symb DrawF, Symb PlusR] (M.insert 'Y' [Symb MinusR, Symb DrawF,  Ide 'X', Symb MinusR, Ide 'Y'] M.empty)
+
+exampleState = executeDrawing 'X' 90 exampleMap 15
+
+dragonState = executeDrawing 'X' 90 dragonMap 10
+
+execDragon = drawPicture $ pic $ execState dragonState myDrawer
 
 -- Axiom, Angle, Map mit Befehlen -> Generation -> IO ()
-executeDrawing :: Char -> Integer -> Memory -> Integer -> State Drawer Picture
+executeDrawing :: Char -> Integer -> Memory -> Integer -> State Drawer () --TODO kill programm when counter reaches 100 (start with gen and decrement)
 executeDrawing ax ang mem gen = do
-                                abc <- evalAtoms (M.findWithDefault [] ax mem) mem gen 0
-                                getPicture
+                                pictures <- execAtoms (M.findWithDefault [] ax mem) mem gen 0 -- State Drawer Picture
+                                return () --getPicture
+
+
+
+
+--TODO eigenen Datentyp für (Axiom, Header, Map)
+execAtoms :: [Atom] -> M.Map Char [Atom] -> Integer -> Integer -> State Drawer ()
+execAtoms [] _ _ _ = return ()
+execAtoms (x:xs) m gen counter =  if counter >= gen then return () else
+                    do
+                    evalFirst <- execAtom x m gen (counter)
+                    evalRest <- execAtoms xs m gen (counter)
+                    return ()
+
+
+execAtom :: Atom -> M.Map Char [Atom] -> Integer -> Integer -> State Drawer ()
+execAtom a m gen counter = case a of
+                Symb s -> do
+                            symbolToDrawer s
+                Ide c -> do
+                            execAtoms (M.findWithDefault [] c m) m gen (counter+1)
+
+
+symbolToDrawer :: Symbol -> State Drawer ()
+symbolToDrawer s = case s of
+                DrawF -> drawForward
+                DrawB -> drawBackward
+                MoveF -> moveForward
+                MoveB -> moveBackward
+                PlusR -> rotateRight 90.0
+                MinusR -> rotateLeft 90.0
+                Push -> return ()
+                Pop -> return ()
+
+
+debugString :: Symbol -> String
+debugString s = case s of
+                DrawF -> "Draw forward"
+                DrawB -> "Draw backward"
+                MoveF -> "Move forward"
+                MoveB -> "Move backward"
+                PlusR -> "Rotate right"
+                MinusR -> "Rotate left"
+                Push -> "Push pos"
+                Pop -> "Pop pos"
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 exampleString = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y"
 
 type Log = [String]
+data AdvMem = AdvMem {axiom :: Char, angle :: Integer, mem :: Memory}
 type Memory = M.Map Char [Atom]
-type Logging = WriterT Log (State Memory)
+type Logging = WriterT Log (State Memory) 
 --type Logging s = Writer Log s
 
 getMap = snd (runIt exampleString)
@@ -80,54 +146,13 @@ evalRule (Rule i atoms) = do -- store string in state
             tell ["Done storing atomes."]
 
 
---TODO eigenen Datentyp für (Axiom, Header, Map)
-evalAtoms :: [Atom] -> M.Map Char [Atom] -> Integer -> Integer -> State Drawer ()
-evalAtoms [] _ _ _ = return ()
-evalAtoms (x:xs) m gen counter =  if counter >= gen then return () else
-                    do
-                    evalFirst <- evalAtom x m gen (counter)
-                    evalRest <- evalAtoms xs m gen (counter)
-                    return ()
-
-
-evalAtom :: Atom -> M.Map Char [Atom] -> Integer -> Integer -> State Drawer ()
-evalAtom a m gen counter = case a of
-                Symb s -> do
-                            symbolToDrawer s
-                Ide c -> do
-                            evalAtoms (M.findWithDefault [] c m) m gen (counter+1)
-
-
-symbolToDrawer :: Symbol -> State Drawer ()
-symbolToDrawer s = case s of
-                DrawF -> drawForward
-                DrawB -> drawBackward
-                MoveF -> moveForward
-                MoveB -> moveBackward
-                PlusR -> rotateRight 90.0
-                MinusR -> rotateLeft 90.0
-                Push -> return ()
-                Pop -> return ()
-
-
-debugString :: Symbol -> String
-debugString s = case s of
-                DrawF -> "Draw forward"
-                DrawB -> "Draw backward"
-                MoveF -> "Move forward"
-                MoveB -> "Move backward"
-                PlusR -> "Rotate right"
-                MinusR -> "Rotate left"
-                Push -> "Push pos"
-                Pop -> "Pop pos"
-
 
 -- ^ Parsing
 
 type Id = Char
 type NumI = Integer
 
-data System =  System [Header] [Rule]
+data System = System [Header] [Rule]
      deriving (Show, Eq)
 data Header = Axiom Id | Angle Integer
   deriving (Show, Eq)

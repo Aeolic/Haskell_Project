@@ -1,7 +1,7 @@
-module Drawer (
+module DrawerM (
   module Graphics.Gloss,
-  Drawer,
-  Cursor,
+  Drawer (..),
+  Cursor (..),
   rotateLeft,
   rotateRight,
   moveForward,
@@ -37,10 +37,10 @@ rotate :: Float -> Cursor -> Cursor
 rotate angle c = Cursor (anchor c) (makeDegrees (orientation c + angle))
 
 rotateLeft :: Float -> State Drawer ()
-rotateLeft angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate angle c) l p)
+rotateLeft angle = state $ \(Drawer c l p) -> ((), Drawer (DrawerM.rotate angle c) l p)
 
 rotateRight :: Float -> State Drawer ()
-rotateRight angle = state $ \(Drawer c l p) -> ((), Drawer (Drawer.rotate (360.0 - angle) c) l p)
+rotateRight angle = state $ \(Drawer c l p) -> ((), Drawer (DrawerM.rotate (360.0 - angle) c) l p)
 
 moveForward :: State Drawer ()
 moveForward = state $ \(Drawer c l p) -> ((), Drawer (Cursor (move (makeDegrees ((orientation c)+180.0)) l (anchor c)) (orientation c)) l p)
