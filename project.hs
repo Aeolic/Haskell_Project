@@ -10,43 +10,47 @@ import qualified Data.Map as M
 import ParserCon
 import DrawerM
 
+generations :: Integer
+generations = 10
+
 exampleMap :: M.Map Char [Atom]
 exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'] M.empty
 
 dragonMap :: M.Map Char [Atom]
 dragonMap = M.insert 'X' [Ide 'X', Symb PlusR, Ide 'Y', Symb DrawF, Symb PlusR] (M.insert 'Y' [Symb MinusR, Symb DrawF,  Ide 'X', Symb MinusR, Ide 'Y'] M.empty)
 
-exampleState = executeDrawing 'X' 90 exampleMap 15
+exampleState = executeDrawing  (AdvMem 'X' 90 exampleMap) generations
 
-dragonState = executeDrawing 'X' 90 dragonMap 10
+dragonState = executeDrawing (AdvMem 'X' 90 dragonMap) generations
 
 execDragon = drawPicture $ pic $ execState dragonState myDrawer
 
--- Axiom, Angle, Map mit Befehlen -> Generation -> IO ()
-executeDrawing :: Char -> Integer -> Memory -> Integer -> State Drawer () --TODO kill programm when counter reaches 100 (start with gen and decrement)
-executeDrawing ax ang mem gen = do
-                                pictures <- execAtoms (M.findWithDefault [] ax mem) mem gen 0 -- State Drawer Picture
-                                return () --getPicture
 
+parseAndDraw :: String -> IO ()
+parseAndDraw s = drawPicture $ pic $ execState (executeDrawing (getMap s) generations) myDrawer
 
+executeDrawing :: AdvMem -> Integer -> State Drawer () 
+executeDrawing mem gen = do
+                        pictures <- execAtoms (M.findWithDefault [] (axiom mem) (memory mem)) mem gen
+                        return ()
 
 
 --TODO eigenen Datentyp für (Axiom, Header, Map)
-execAtoms :: [Atom] -> M.Map Char [Atom] -> Integer -> Integer -> State Drawer ()
-execAtoms [] _ _ _ = return ()
-execAtoms (x:xs) m gen counter =  if counter >= gen then return () else
+execAtoms :: [Atom] -> AdvMem -> Integer -> State Drawer ()
+execAtoms [] _ _ = return ()
+execAtoms (x:xs) m gen =  if gen <= 0 then return () else
                     do
-                    evalFirst <- execAtom x m gen (counter)
-                    evalRest <- execAtoms xs m gen (counter)
+                    evalFirst <- execAtom x m gen
+                    evalRest <- execAtoms xs m gen
                     return ()
 
 
-execAtom :: Atom -> M.Map Char [Atom] -> Integer -> Integer -> State Drawer ()
-execAtom a m gen counter = case a of
+execAtom :: Atom -> AdvMem -> Integer -> State Drawer ()
+execAtom a m gen = case a of
                 Symb s -> do
                             symbolToDrawer s
                 Ide c -> do
-                            execAtoms (M.findWithDefault [] c m) m gen (counter+1)
+                            execAtoms ( M.findWithDefault [] c (memory m)) m (gen-1)
 
 
 symbolToDrawer :: Symbol -> State Drawer ()
@@ -55,7 +59,7 @@ symbolToDrawer s = case s of
                 DrawB -> drawBackward
                 MoveF -> moveForward
                 MoveB -> moveBackward
-                PlusR -> rotateRight 90.0
+                PlusR -> rotateRight 90.0 --TODO remove hardcoded angle
                 MinusR -> rotateLeft 90.0
                 Push -> return ()
                 Pop -> return ()
@@ -76,44 +80,36 @@ debugString s = case s of
 
 
 
-
-
-
-
-
-
-
-
-
 exampleString = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y"
 
 type Log = [String]
-data AdvMem = AdvMem {axiom :: Char, angle :: Integer, mem :: Memory}
 type Memory = M.Map Char [Atom]
-type Logging = WriterT Log (State Memory) 
---type Logging s = Writer Log s
+type Logging = WriterT Log (State AdvMem) () 
 
-getMap = snd (runIt exampleString)
+data AdvMem = AdvMem {axiom :: Char, angle :: Integer, memory :: Memory}
+            deriving (Show,Eq)
+
+getMap s = snd (runIt s)
 getNicePrint = mapM_ print $ snd $ fst $ runIt exampleString
 
-runIt s = runState (runWriterT (parseAndEvaluate s)) M.empty
+runIt s = runState (runWriterT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
 
 --runState (runWriterT (parseAndEvaluate s))
 
-parseAndEvaluate :: String -> Logging () -- (Char,Integer)???
+parseAndEvaluate :: String -> Logging
 parseAndEvaluate s = case parseString s of
                       Just p -> eval p
                       Nothing -> do
                                 tell ["ERROR"]
 
-eval :: System -> Logging ()
+eval :: System -> Logging
 eval (System h r) = do
                     tell ["Evaluating Headers"]
                     headers <- evalHeaders h
                     rules <- evalRules r
                     return ()
 
-evalHeaders :: [Header] -> Logging ()
+evalHeaders :: [Header] -> Logging
 evalHeaders [] = return ()
 evalHeaders (x:xs) = do
                     evalFirst <- evalHeader x
@@ -121,27 +117,32 @@ evalHeaders (x:xs) = do
                     return ()
 
 
-evalHeader :: Header -> Logging ()
+evalHeader :: Header -> Logging
 evalHeader h = case h of
-                Axiom ax -> do
-                            tell ["Found Axiom " ++ show ax]
+                Axiom axiom -> do
+                            AdvMem ax ang mem <- get
+                            tell ["Found Axiom " ++ show axiom]
+                            put (AdvMem axiom ang mem)
+
                 Angle int -> do
-                            tell ["Found Angle " ++ show int] --TODO STORE
+                            AdvMem ax ang mem <- get
+                            tell ["Found Angle " ++ show int]
+                            put (AdvMem ax int mem)
 
 
-evalRules :: [Rule] -> Logging ()
+evalRules :: [Rule] -> Logging
 evalRules [] = return ()
 evalRules (x:xs) = do
                     evalFirst <- evalRule x
                     evalRest <- evalRules xs
                     return ()
 
-evalRule :: Rule -> Logging ()
+evalRule :: Rule -> Logging
 evalRule (Rule i atoms) = do -- store string in state
             tell["Storing my atoms to given Id:" ++ show i]
-            oldMap <- get
-            let newMap = M.insert i atoms oldMap
-            put newMap
+            AdvMem ax ang mem <- get
+            let newMap = M.insert i atoms mem
+            put (AdvMem ax ang newMap)
             --a <- evalAtoms atoms -- wir hier nicht benötigt - execution ist unabhängig
             tell ["Done storing atomes."]
 
