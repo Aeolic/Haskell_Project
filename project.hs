@@ -10,8 +10,14 @@ import qualified Data.Map as M
 import ParserCon
 import DrawerM
 
+
+exampleString = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y" --Dragon
+exampleString2 = "angle 90\n axiom X\n X -> XY\n Y -> -F-X-YFZ-F\n Z -> FF-FF+F"
+
+pad s = parseAndDraw s
+
 generations :: Integer
-generations = 10
+generations = 14
 
 exampleMap :: M.Map Char [Atom]
 exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'] M.empty
@@ -80,7 +86,7 @@ debugString s = case s of
 
 
 
-exampleString = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y"
+
 
 type Log = [String]
 type Memory = M.Map Char [Atom]
