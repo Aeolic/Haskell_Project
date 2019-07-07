@@ -1,2 +1,0 @@
-# Haskell_Project
-lalala

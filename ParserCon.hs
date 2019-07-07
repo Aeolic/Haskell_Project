@@ -3,13 +3,13 @@ module ParserCon
   ( module Control.Applicative -- ^ This exports the operators (<*, *>, <*>, <|>,...)
     --   and combintors `empty' and `many'
   , module Control.Monad
-  , Parser       -- ^ the parser newtype
+  , ParserC       -- ^ the ParserC newtype
   , lit          -- ^ versions of old combinators that work with the newtype
   , satisfy
   , try
   , parse        -- ^ return (Just result) on success
-  , parseAll     -- ^ returns the `list of successes' (just applies the underlying RawParser)
-  , parseLongest -- ^ returns the longest possible parse (as ParseResult value)
+  , parseAll     -- ^ returns the `list of successes' (just applies the underlying RawParserC)
+  , parseLongest -- ^ returns the longest possible parse (as ParserCesult value)
   ) where
 
 import Control.Applicative
@@ -19,83 +19,83 @@ import Data.List
 import Data.Maybe
 import Data.Char
 
--- ^ Execution of a parser
-parse :: Parser t r -> [t] -> Maybe r
+-- ^ Execution of a ParserC
+parse :: ParserC t r -> [t] -> Maybe r
 parse p ts = case  parseLongest p ts of
                Match x -> Just x
                _ -> Nothing
 
-data ParseResult t r = Match r | Partial (r, [t]) | Fail
+data ParserCesult t r = Match r | Partial (r, [t]) | Fail
   deriving (Show, Eq)
 
-parseLongest :: Parser t r -> [t] -> ParseResult t r
+parseLongest :: ParserC t r -> [t] -> ParserCesult t r
 parseLongest p ts =  maybe (tryPartial allResults) Match $  tryMatch allResults
    where allResults = parseAll p ts
          tryMatch rs = fmap fst $ listToMaybe $ dropWhile (not . null . snd) rs
          tryPartial [] = Fail
          tryPartial xs = Partial $ minimumBy (compare `on` (length . snd)) xs
 
-parseAll :: Parser t r -> [t] -> [(r, [t])]
-parseAll p = rawParser p
+parseAll :: ParserC t r -> [t] -> [(r, [t])]
+parseAll p = rawParserC p
 
--- ^ RawParser, Called "Parser" in the course
-type RawParser token result = [token] -> [(result, [token])]
+-- ^ RawParserC, Called "ParserC" in the course
+type RawParserC token result = [token] -> [(result, [token])]
 
-pempty :: RawParser t r
+pempty :: RawParserC t r
 pempty ts = []
 
-psucceed :: r -> RawParser t r
+psucceed :: r -> RawParserC t r
 psucceed r ts = [(r, ts)]
 
-psatisfy :: (t -> Bool) -> RawParser t t
+psatisfy :: (t -> Bool) -> RawParserC t t
 psatisfy p [] = []
 psatisfy p (t:ts) | p t       = [(t, ts)]
                   | otherwise = []
 
 
-msatisfy :: (t -> Maybe a) -> RawParser t a
+msatisfy :: (t -> Maybe a) -> RawParserC t a
 msatisfy f [] = []
 msatisfy f (t:ts) = case f t of
                       Nothing -> []
                       Just a  -> psucceed a ts
 
-plit :: Eq t => t -> RawParser t t
+plit :: Eq t => t -> RawParserC t t
 plit t = psatisfy (== t)
 
-palt :: RawParser t r -> RawParser t r -> RawParser t r
+palt :: RawParserC t r -> RawParserC t r -> RawParserC t r
 palt p1 p2 = \ts -> p1 ts ++ p2 ts
 
-pseq :: RawParser t (s -> r) -> RawParser t s -> RawParser t r
+pseq :: RawParserC t (s -> r) -> RawParserC t s -> RawParserC t r
 pseq p1 p2 ts = [ (f s, ts'') | (f, ts') <- p1 ts, (s, ts'') <- p2 ts' ]
 
-pmap :: (s -> r) -> RawParser t s -> RawParser t r
+pmap :: (s -> r) -> RawParserC t s -> RawParserC t r
 pmap f p ts = [ (f s, ts') | (s, ts') <- p ts]
 
 
 
--- ^ Modifications and instances, analogous to Parser' in the course
-newtype Parser token result = P (RawParser token result)
+-- ^ Modifications and instances, analogous to ParserC' in the course
+newtype ParserC token result = P (RawParserC token result)
 
-rawParser :: Parser t r -> RawParser t r
-rawParser (P p) = p
+rawParserC :: ParserC t r -> RawParserC t r
+rawParserC (P p) = p
 
-instance Functor (Parser t) where
-  fmap f = P . pmap f . rawParser
+instance Functor (ParserC t) where
+  fmap f = P . pmap f . rawParserC
 
-instance Applicative (Parser t) where
+instance Applicative (ParserC t) where
   pure v = P $ psucceed v
   (P p1) <*> (P p2) = P (p1 `pseq` p2)
 
-instance Alternative (Parser t) where
+instance Alternative (ParserC t) where
   empty = P pempty
   P p1 <|> P p2 = P (p1 `palt` p2)
 
-instance Monad (Parser t) where
+instance Monad (ParserC t) where
   return = pure
   (>>=) (P p) f = P $ \ts ->
-    concatMap (\(r, rest) -> rawParser (f r) rest) $ p ts
+    concatMap (\(r, rest) -> rawParserC (f r) rest) $ p ts
 
-instance MonadPlus (Parser t) where
+instance MonadPlus (ParserC t) where
   mzero = empty
   mplus = (<|>)
 
@@ -103,23 +103,23 @@ lit x = P $ plit x
 satisfy p = P $ psatisfy p
 try p = P $ msatisfy p
 
-pmany :: Parser t r -> Parser t [r]
+pmany :: ParserC t r -> ParserC t [r]
 pmany p = ((:) <$> p <*> pmany p) <|> pure []
 
-pmany1 :: Parser t r -> Parser t [r]
+pmany1 :: ParserC t r -> ParserC t [r]
 pmany1 p = (:) <$> p <*> pmany p
 
 pIntersperse ::
-    Parser t r -> Parser t w -> Parser t [r] 
+    ParserC t r -> ParserC t w -> ParserC t [r] 
 pIntersperse pThing pSep =
     (body <|> return [])
     where
       body = (:) <$> pThing <*> pmany p
       p = pSep *> pThing
 
-pInt :: Parser Char Integer
+pInt :: ParserC Char Integer
 pInt = read <$> pmany1 (satisfy isDigit)
 
-pIntList :: Parser Char [Integer]
+pIntList :: ParserC Char [Integer]
 pIntList =
     lit '[' *> pIntersperse pInt (lit ',') <* lit ']'

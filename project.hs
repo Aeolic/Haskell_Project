@@ -9,15 +9,39 @@ import Control.Monad.Writer
 import qualified Data.Map as M
 import ParserCon
 import DrawerM
+import Options.Applicative
+import Data.Semigroup ((<>))
 
 
-exampleString = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y" --Dragon
-exampleString2 = "angle 90\n axiom X\n X -> XY\n Y -> -F-X-YFZ-F\n Z -> FF-FF+F"
 
-pad s = parseAndDraw s
+es = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y" --Dragon
+es2 = "angle 90\n axiom X\n X -> XY\n Y -> -F-X-YFZ-F\n Z -> FF-FF+F"
+esD = "angle 70 axiom X X -> X+YF+ Y -> -FX-Y"
 
-generations :: Integer
-generations = 14
+es3 = "angle 120 axiom X X -> F-[+FX]-XY Y-> [X+F]X+YF+"
+
+pad s i = parseAndDraw s i
+
+
+main :: IO ()
+main = pad esD  =<< execParser (info (sample <**> helper)
+                      ( fullDesc
+                     <> progDesc "Print a greeting for TARGET"
+                     <> header "hello - a test for optparse-applicative" ))
+
+data Sample = Sample {generations :: Integer}
+
+sample :: Parser Sample
+sample = Sample <$> option auto
+                    (long "generations"
+                    <> short 'g'
+                    <> help "number of generations"
+                    <> showDefault
+                    <> value 10
+                    <> metavar "INTEGER")
+
+generationH :: Integer
+generationH = 15
 
 exampleMap :: M.Map Char [Atom]
 exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'] M.empty
@@ -25,15 +49,15 @@ exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 
 dragonMap :: M.Map Char [Atom]
 dragonMap = M.insert 'X' [Ide 'X', Symb PlusR, Ide 'Y', Symb DrawF, Symb PlusR] (M.insert 'Y' [Symb MinusR, Symb DrawF,  Ide 'X', Symb MinusR, Ide 'Y'] M.empty)
 
-exampleState = executeDrawing  (AdvMem 'X' 90 exampleMap) generations
+exampleState = executeDrawing  (AdvMem 'X' 90 exampleMap) generationH
 
-dragonState = executeDrawing (AdvMem 'X' 90 dragonMap) generations
+dragonState = executeDrawing (AdvMem 'X' 90 dragonMap) generationH
 
 execDragon = drawPicture $ pic $ execState dragonState myDrawer
 
 
-parseAndDraw :: String -> IO ()
-parseAndDraw s = drawPicture $ pic $ execState (executeDrawing (getMap s) generations) myDrawer
+parseAndDraw :: String -> Sample -> IO ()
+parseAndDraw s (Sample gen) = drawPicture $ pic $ execState (executeDrawing (getMap s) gen) myDrawer
 
 executeDrawing :: AdvMem -> Integer -> State Drawer () 
 executeDrawing mem gen = do
@@ -54,21 +78,21 @@ execAtoms (x:xs) m gen =  if gen <= 0 then return () else
 execAtom :: Atom -> AdvMem -> Integer -> State Drawer ()
 execAtom a m gen = case a of
                 Symb s -> do
-                            symbolToDrawer s
+                            symbolToDrawer s (angle m)
                 Ide c -> do
                             execAtoms ( M.findWithDefault [] c (memory m)) m (gen-1)
 
 
-symbolToDrawer :: Symbol -> State Drawer ()
-symbolToDrawer s = case s of
+symbolToDrawer :: Symbol -> Integer -> State Drawer ()
+symbolToDrawer s i = case s of
                 DrawF -> drawForward
                 DrawB -> drawBackward
                 MoveF -> moveForward
                 MoveB -> moveBackward
-                PlusR -> rotateRight 90.0 --TODO remove hardcoded angle
-                MinusR -> rotateLeft 90.0
-                Push -> return ()
-                Pop -> return ()
+                PlusR -> rotateRight (fromIntegral i)
+                MinusR -> rotateLeft (fromIntegral i) 
+                Push -> pushPosition
+                Pop -> popPosition
 
 
 debugString :: Symbol -> String
@@ -96,7 +120,7 @@ data AdvMem = AdvMem {axiom :: Char, angle :: Integer, memory :: Memory}
             deriving (Show,Eq)
 
 getMap s = snd (runIt s)
-getNicePrint = mapM_ print $ snd $ fst $ runIt exampleString
+getNicePrint = mapM_ print $ snd $ fst $ runIt es
 
 runIt s = runState (runWriterT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
 
@@ -176,29 +200,29 @@ parseString s = do
             l <- lexer s
             parse parser l
 
-parser :: Parser Token System
+parser :: ParserC Token System
 parser = System <$> many (parseHeader) <*> many1 (parseRule)
 
 
-parseAtom :: Parser Token Atom
+parseAtom :: ParserC Token Atom
 parseAtom = try (\token -> case token of
                               TSymb smb -> Just $ Symb smb
                               TId id -> Just $ Ide id
                               _ -> Nothing) --could split into 2, might be necessary for rule parser
 
-parseId :: Parser Token Id
+parseId :: ParserC Token Id
 parseId = try (\token -> case token of
                               TId id -> Just id
                               _ -> Nothing)
 
-parseRule :: Parser Token Rule --(Id parser?, many1 or many?)
+parseRule :: ParserC Token Rule --(Id parser?, many1 or many?)
 parseRule = Rule <$> (parseId <* lit TAsgn) <*> (many1 parseAtom)
 
-parseHeader :: Parser Token Header
+parseHeader :: ParserC Token Header
 parseHeader = Axiom <$> (lit TAxiom *> parseId)
               <|> Angle <$> (lit TAngle *> parseNum)
 
-parseNum :: Parser Token NumI
+parseNum :: ParserC Token NumI
 parseNum = try (\token -> case token of
                               TNum x-> Just x
                               _ -> Nothing)
@@ -249,7 +273,7 @@ t_alnum = fmap mkToken $ (:) <$> satisfy isAlpha <*> many (satisfy isAlphaNum)
 isAlphaAndUpper :: Char -> Bool
 isAlphaAndUpper c = isAlpha c && isUpper c
 
-t_id :: Parser Char Token
+t_id :: ParserC Char Token
 t_id = TId <$> satisfy isAlphaAndUpper -- übler hack!!! aber gerade keinen Plan wie das sonst gehen soll :D
 
 -- ^ Utilities
