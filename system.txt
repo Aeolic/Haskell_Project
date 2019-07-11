@@ -1,0 +1,3 @@
+angle 70
+axiom X 
+X -> F-X+F-F+X

@@ -15,79 +15,78 @@ import Data.Semigroup ((<>))
 import Graphics.Gloss.Data.ViewPort
 
 
+--TODO sortieren!
 
-es = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y" --Dragon
-es2 = "angle 90\n axiom X\n X -> XY\n Y -> -F-X-YFZ-F\n Z -> FF-FF+F"
-esD = "angle 90 axiom X X -> X+YF+ Y -> -FX-Y"
-
-es3 = "angle 120 axiom X X -> F-[+FX]-XY Y-> [X+F]X+YF+"
-
-pad s i = parseAndDraw s i
-
-
-main :: IO ()
-main = simulate (InWindow "My Window" (800, 600) (400, 300))
-        white (fromInteger (2^(generationH `div` 2))) getPictures modToPic func2
-
-
-getPictures = (Pictures[Blank], evalState (executeDrawing (getMap esD) generationH) myDrawer)
-
-modToPic :: (Picture,Picture) -> Picture
-modToPic (x,y) = x
-
-
-func2 :: ViewPort -> Float -> (Picture,Picture) -> (Picture,Picture)
-func2 v f ( p,Pictures (y:ys)) = (Pictures [p,y] ,Pictures ys)
-func2 v f (p, Pictures []) = (p, Pictures [])
-
-main2 :: IO ()
-main2 = pad esD  =<< execParser (info (sample <**> helper)
-                      ( fullDesc
-                     <> progDesc "Print a greeting for TARGET"
-                     <> header "hello - a test for optparse-applicative" ))
-
-data Sample = Sample {generations :: Integer}
+-- 1. Der Parser fürs CLI
+data Sample = 
+    Sample {generations :: Int, animate :: Bool, framesPerSecond :: Int, target :: String}
 
 sample :: Parser Sample
 sample = Sample <$> option auto
                     (long "generations"
                     <> short 'g'
-                    <> help "number of generations"
+                    <> help "Number of generations."
                     <> showDefault
                     <> value 10
-                    <> metavar "INTEGER")
+                    <> metavar "Int")
+                <*> switch
+                    ( long "animate"
+                    <> short 'a'
+                    <> help "Whether the drawing is animated or static." )
+                <*> option auto
+                    (long "frames"
+                    <> short 'f'
+                    <> help "Number of Frames drawn per second, when program is start with '--animate'."
+                    <> showDefault
+                    <> value 20
+                    <> metavar "Int")
+                <*> strOption
+                    ( long "target"
+                    <> short 't'
+                    <> metavar "TARGET"
+                    <> help "Target for the greeting"
+                    <> showDefault
+                    <> value "system.txt" )
 
-generationH :: Integer
-generationH = 16
+-- 2. Top level execution + helper methods
 
-exampleMap :: M.Map Char [Atom]
-exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'] M.empty
+main :: IO ()
+main = do
+        parseAndDraw =<< execParser (info (sample <**> helper)
+                      ( fullDesc
+                     <> progDesc "Executes a drawing for the dragon Curve!"
+                     <> header "Tamara and Jureks amazing haskell drawing machine." ))
 
-dragonMap :: M.Map Char [Atom]
-dragonMap = M.insert 'X' [Ide 'X', Symb PlusR, Ide 'Y', Symb DrawF, Symb PlusR] (M.insert 'Y' [Symb MinusR, Symb DrawF,  Ide 'X', Symb MinusR, Ide 'Y'] M.empty)
+parseAndDraw :: Sample -> IO ()
+parseAndDraw (Sample gen False _ target) = do 
+                                contents <- readFile target
+                                drawPicture $ evalState (executeDrawing (getMap contents) gen) myDrawer
+parseAndDraw (Sample gen True steps target) = do
+                                contents <- readFile target
+                                simulate (InWindow "Animation" (1200, 800) (0, 0))
+                                    white steps (getPictures contents gen) modToPic getNewPicture
 
-exampleState = executeDrawing  (AdvMem 'X' 90 exampleMap) generationH
-
-dragonState = executeDrawing (AdvMem 'X' 90 dragonMap) generationH
-
-execDragon = drawPicture $ pic $ execState dragonState myDrawer
-
-
-parseAndDraw :: String -> Sample -> IO ()
-parseAndDraw s (Sample gen) = drawPicture $ pic $ execState (executeDrawing (getMap s) gen) myDrawer
-
-
-
-
-executeDrawing :: AdvMem -> Integer -> State Drawer Picture
+executeDrawing :: AdvMem -> Int -> State Drawer Picture
 executeDrawing mem gen = do
-                        execAtoms (M.findWithDefault [] (axiom mem) (memory mem)) mem gen
+                        execAtoms (M.findWithDefault [] (Ide(axiom mem)) (memory mem)) mem gen
                         pictures <- get
                         return (Pictures (reverse $ getPics $ pic $ pictures))
 
+getPictures :: String -> Int -> (Picture,Picture)
+getPictures s gen = (Pictures[Blank], evalState (executeDrawing (getMap s) gen) myDrawer)
 
---TODO eigenen Datentyp für (Axiom, Header, Map)
-execAtoms :: [Atom] -> AdvMem -> Integer -> State Drawer ()
+modToPic :: (Picture,Picture) -> Picture
+modToPic (x,y) = x
+
+
+getNewPicture :: ViewPort -> Float -> (Picture,Picture) -> (Picture,Picture)
+getNewPicture v f ( p,Pictures (y:ys)) = (Pictures [p,y] ,Pictures ys)
+getNewPicture v f (p, Pictures []) = (p, Pictures [])
+
+
+-- 3. Hier werden die Atome ausgeführt, das heißt eine Liste aus Bilder wird erstellt
+
+execAtoms :: [Atom] -> AdvMem -> Int -> State Drawer ()
 execAtoms [] _ _ = return ()
 execAtoms (x:xs) m gen =  if gen <= 0 then return () else
                     do
@@ -96,16 +95,16 @@ execAtoms (x:xs) m gen =  if gen <= 0 then return () else
                     return ()
 
 
-execAtom :: Atom -> AdvMem -> Integer -> State Drawer ()
+execAtom :: Atom -> AdvMem -> Int -> State Drawer ()
 execAtom a m gen = case a of
                 Symb s -> do
                             symbolToDrawer s (angle m)
-                            -- TODO check in map if exists and execute
+                            execAtoms ( M.findWithDefault [] (Symb s) (memory m)) m (gen-1)
                 Ide c -> do
-                            execAtoms ( M.findWithDefault [] c (memory m)) m (gen-1)
+                            execAtoms ( M.findWithDefault [] (Ide c) (memory m)) m (gen-1)
 
 
-symbolToDrawer :: Symbol -> Integer -> State Drawer ()
+symbolToDrawer :: Symbol -> Int -> State Drawer ()
 symbolToDrawer s i = case s of
                 DrawF -> drawForward
                 DrawB -> drawBackward
@@ -116,37 +115,18 @@ symbolToDrawer s i = case s of
                 Push -> pushPosition
                 Pop -> popPosition
 
-
-debugString :: Symbol -> String
-debugString s = case s of
-                DrawF -> "Draw forward"
-                DrawB -> "Draw backward"
-                MoveF -> "Move forward"
-                MoveB -> "Move backward"
-                PlusR -> "Rotate right"
-                MinusR -> "Rotate left"
-                Push -> "Push pos"
-                Pop -> "Pop pos"
-
-
-
-
-
-
-
+-- 4. Evaluierung von geparsten Elementen zu Memory
+--TODO rename, remove unnecessary writer monad
 type Log = [String]
-type Memory = M.Map Char [Atom]
+type Memory = M.Map Atom [Atom]
 type Logging = WriterT Log (State AdvMem) () 
 
-data AdvMem = AdvMem {axiom :: Char, angle :: Integer, memory :: Memory}
+data AdvMem = AdvMem {axiom :: Char, angle :: Int, memory :: Memory}
             deriving (Show,Eq)
 
 getMap s = snd (runIt s)
-getNicePrint = mapM_ print $ snd $ fst $ runIt es
 
 runIt s = runState (runWriterT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
-
---runState (runWriterT (parseAndEvaluate s))
 
 parseAndEvaluate :: String -> Logging
 parseAndEvaluate s = case parseString s of
@@ -195,26 +175,25 @@ evalRule (Rule i atoms) = do -- store string in state
             AdvMem ax ang mem <- get
             let newMap = M.insert i atoms mem
             put (AdvMem ax ang newMap)
-            --a <- evalAtoms atoms -- wir hier nicht benötigt - execution ist unabhängig
             tell ["Done storing atomes."]
 
 
 
--- ^ Parsing
+-- 5. Parsing: Parst gelexten String zu Datentypen
 
 type Id = Char
-type NumI = Integer
+type NumI = Int
 
 data System = System [Header] [Rule]
      deriving (Show, Eq)
-data Header = Axiom Id | Angle Integer
+data Header = Axiom Id | Angle Int
   deriving (Show, Eq)
-data Rule = Rule Id [Atom]
+data Rule = Rule Atom [Atom]
   deriving (Show, Eq)
 data Atom = Symb Symbol | Ide Char
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 data Symbol = DrawF | DrawB | MoveF| MoveB | PlusR | MinusR | Push | Pop
-  deriving(Show, Eq)
+  deriving(Show, Eq, Ord)
 
 
 parseString :: String -> Maybe System
@@ -238,7 +217,7 @@ parseId = try (\token -> case token of
                               _ -> Nothing)
 
 parseRule :: ParserC Token Rule --(Id parser?, many1 or many?)
-parseRule = Rule <$> (parseId <* lit TAsgn) <*> (many1 parseAtom)
+parseRule = Rule <$> (parseAtom <* lit TAsgn) <*> (many1 parseAtom)
 
 parseHeader :: ParserC Token Header
 parseHeader = Axiom <$> (lit TAxiom *> parseId)
@@ -249,10 +228,10 @@ parseNum = try (\token -> case token of
                               TNum x-> Just x
                               _ -> Nothing)
 
--- ^ Lexing
+-- 6. Lexer: String -> Tokens
 -- Use this lexer to tokenize the input before parsing
 data Token = TAsgn -- '->'
-           | TNum Integer
+           | TNum Int
            | TId Id
            | TSymb Symbol
            | TNewLine

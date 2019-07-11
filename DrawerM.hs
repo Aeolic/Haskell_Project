@@ -31,10 +31,10 @@ data Cursor = Cursor {anchor :: Point, orientation :: Float}
   deriving (Show)
 data Drawer = Drawer {cursor :: Cursor, lineLength :: Float, pic :: Picture, stack :: Stack}
   deriving(Show)
-type Degrees = Integer
+type Degrees = Int
 
 myCursor = Cursor (0.0, 0.0) 0.0
-myDrawer = Drawer myCursor 10.0 (Pictures [Blank]) []
+myDrawer = Drawer myCursor 5.0 (Pictures [Blank]) []
 
 makeDegrees :: Float -> Float
 makeDegrees a = a `mod'` 360.0
