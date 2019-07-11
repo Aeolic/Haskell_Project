@@ -13,7 +13,8 @@ module DrawerM (
   execDrawing,
   myDrawer,
   pushPosition,
-  popPosition
+  popPosition,
+  getPics
   )
 
 
@@ -33,7 +34,7 @@ data Drawer = Drawer {cursor :: Cursor, lineLength :: Float, pic :: Picture, sta
 type Degrees = Integer
 
 myCursor = Cursor (0.0, 0.0) 0.0
-myDrawer = Drawer myCursor 70.0 (Pictures [Blank]) []
+myDrawer = Drawer myCursor 10.0 (Pictures [Blank]) []
 
 makeDegrees :: Float -> Float
 makeDegrees a = a `mod'` 360.0
@@ -87,8 +88,11 @@ drawForward = do
              Drawer c l p s <- get
              let path = createLine (orientation c) l (anchor c)
              let newAnchor = last path
-             put (Drawer (Cursor newAnchor $ orientation c) l (Pictures [p, Line path]) s)
+             put (Drawer (Cursor newAnchor $ orientation c) l (Pictures ((Line path):(getPics p)))s)
 
+
+getPics :: Picture -> [Picture]
+getPics (Pictures a) = a
 
 drawBackward :: State Drawer ()
 drawBackward = do

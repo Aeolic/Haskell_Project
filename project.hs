@@ -12,11 +12,13 @@ import DrawerM
 import Options.Applicative
 import Data.Semigroup ((<>))
 
+import Graphics.Gloss.Data.ViewPort
+
 
 
 es = "angle 90\n axiom X\n X -> X+YF+\n Y -> -FX-Y" --Dragon
 es2 = "angle 90\n axiom X\n X -> XY\n Y -> -F-X-YFZ-F\n Z -> FF-FF+F"
-esD = "angle 70 axiom X X -> X+YF+ Y -> -FX-Y"
+esD = "angle 90 axiom X X -> X+YF+ Y -> -FX-Y"
 
 es3 = "angle 120 axiom X X -> F-[+FX]-XY Y-> [X+F]X+YF+"
 
@@ -24,7 +26,22 @@ pad s i = parseAndDraw s i
 
 
 main :: IO ()
-main = pad esD  =<< execParser (info (sample <**> helper)
+main = simulate (InWindow "My Window" (800, 600) (400, 300))
+        white (fromInteger (2^(generationH `div` 2))) getPictures modToPic func2
+
+
+getPictures = (Pictures[Blank], evalState (executeDrawing (getMap esD) generationH) myDrawer)
+
+modToPic :: (Picture,Picture) -> Picture
+modToPic (x,y) = x
+
+
+func2 :: ViewPort -> Float -> (Picture,Picture) -> (Picture,Picture)
+func2 v f ( p,Pictures (y:ys)) = (Pictures [p,y] ,Pictures ys)
+func2 v f (p, Pictures []) = (p, Pictures [])
+
+main2 :: IO ()
+main2 = pad esD  =<< execParser (info (sample <**> helper)
                       ( fullDesc
                      <> progDesc "Print a greeting for TARGET"
                      <> header "hello - a test for optparse-applicative" ))
@@ -41,7 +58,7 @@ sample = Sample <$> option auto
                     <> metavar "INTEGER")
 
 generationH :: Integer
-generationH = 15
+generationH = 16
 
 exampleMap :: M.Map Char [Atom]
 exampleMap = M.insert 'X' [Symb DrawF, Symb PlusR, Symb DrawF, Symb MinusR, Ide 'X'] M.empty
@@ -59,10 +76,14 @@ execDragon = drawPicture $ pic $ execState dragonState myDrawer
 parseAndDraw :: String -> Sample -> IO ()
 parseAndDraw s (Sample gen) = drawPicture $ pic $ execState (executeDrawing (getMap s) gen) myDrawer
 
-executeDrawing :: AdvMem -> Integer -> State Drawer () 
+
+
+
+executeDrawing :: AdvMem -> Integer -> State Drawer Picture
 executeDrawing mem gen = do
-                        pictures <- execAtoms (M.findWithDefault [] (axiom mem) (memory mem)) mem gen
-                        return ()
+                        execAtoms (M.findWithDefault [] (axiom mem) (memory mem)) mem gen
+                        pictures <- get
+                        return (Pictures (reverse $ getPics $ pic $ pictures))
 
 
 --TODO eigenen Datentyp für (Axiom, Header, Map)
@@ -79,6 +100,7 @@ execAtom :: Atom -> AdvMem -> Integer -> State Drawer ()
 execAtom a m gen = case a of
                 Symb s -> do
                             symbolToDrawer s (angle m)
+                            -- TODO check in map if exists and execute
                 Ide c -> do
                             execAtoms ( M.findWithDefault [] c (memory m)) m (gen-1)
 
