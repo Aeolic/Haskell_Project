@@ -1,5 +1,3 @@
-import Control.Applicative
-import Control.Monad
 import Data.Function
 import Data.List
 import Data.Maybe
@@ -14,15 +12,14 @@ import Data.Semigroup ((<>))
 import System.Random
 import Graphics.Gloss.Data.ViewPort
 
-
 --TODO sortieren!
 
 -- 1. Der Parser fürs CLI
-data Sample = 
+data Sample =
     Sample {generations :: Int, animate :: Bool, framesPerSecond :: Int, target :: String}
 
 sample :: Parser Sample
-sample = Sample <$> option auto
+sample = Sample <$> option positiveNumber
                     (long "generations"
                     <> short 'g'
                     <> help "Number of generations."
@@ -33,7 +30,7 @@ sample = Sample <$> option auto
                     ( long "animate"
                     <> short 'a'
                     <> help "Whether the drawing is animated or static." )
-                <*> option auto
+                <*> option positiveNumber
                     (long "frames"
                     <> short 'f'
                     <> help "Number of Frames drawn per second, when program is start with '--animate'."
@@ -48,6 +45,13 @@ sample = Sample <$> option auto
                     <> showDefault
                     <> value "system.txt" )
 
+positiveNumber :: ReadM Int
+positiveNumber = do
+  i <- auto
+  case (\i -> if i > 0 then True else False) i of
+   True  -> return i
+   False -> readerError "Number must be >0"
+
 -- 2. Top level execution + helper methods
 
 main :: IO ()
@@ -58,7 +62,7 @@ main = do
                      <> header "Tamara and Jureks amazing haskell drawing machine." ))
 
 parseAndDraw :: Sample -> IO ()
-parseAndDraw (Sample gen False _ target) = do 
+parseAndDraw (Sample gen False _ target) = do
                                 contents <- readFile target
                                 drawPicture $ evalState (executeDrawing (getMap contents) gen) myDrawer
 parseAndDraw (Sample gen True steps target) = do
@@ -92,7 +96,7 @@ execProbMap pM m gen = do
                     let random = if gen `mod` 2 == 0 then 0.3 else 0.8
                     --trueRand <- randomIO TODO insert randomness
                     let key = M.lookupGE random pM
-                    case key of 
+                    case key of
                         Just (k,v) -> do
                                      execAtoms v m gen
                         Nothing -> do
@@ -125,7 +129,7 @@ symbolToDrawer s i = case s of
                 MoveF -> moveForward
                 MoveB -> moveBackward
                 PlusR -> rotateRight (fromIntegral i)
-                MinusR -> rotateLeft (fromIntegral i) 
+                MinusR -> rotateLeft (fromIntegral i)
                 Push -> pushPosition
                 Pop -> popPosition
 
@@ -134,7 +138,7 @@ symbolToDrawer s i = case s of
 --TODO rename, remove unnecessary writer monad
 type Log = [String]
 type Memory = M.Map Atom ProbMap
-type Logging = WriterT Log (State AdvMem) () 
+type Logging = WriterT Log (State AdvMem) ()
 type Command = [Atom]
 
 type ProbMap = M.Map Float [Atom]
@@ -144,9 +148,9 @@ data AdvMem = AdvMem {axiom :: Char, angle :: Int, memory :: Memory}
 
 someTestString = "angle 70 axiom X X -> F-X+F-F+X"
 
-getMap s = snd (runIt s)
+getMap s = runIt s
 
-runIt s = runState (runWriterT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
+runIt s = execState (runWriterT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
 
 parseAndEvaluate :: String -> Logging
 parseAndEvaluate s = case parseString s of
@@ -199,7 +203,7 @@ evalRule (Rule i atoms) = do
 
 evalRule (RuleP i prob atoms) = do
             AdvMem ax ang mem <- get
-            let probMapOfI = M.findWithDefault M.empty i mem 
+            let probMapOfI = M.findWithDefault M.empty i mem
             let probSum = (foldr (+) 0 (M.keys probMapOfI)) + prob
             let probMap = M.insert probSum atoms probMapOfI
             let newMap = M.insert i probMap mem
