@@ -1,3 +1,4 @@
-angle 70
+angle 45
 axiom X 
-X -> F-X+F-F+X
+X -0.3> FF+FFX
+X -0.7> FF-FFX

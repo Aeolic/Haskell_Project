@@ -6,12 +6,12 @@ import Data.Maybe
 import Data.Char
 import Control.Monad.State
 import Control.Monad.Writer
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import ParserCon
 import DrawerM
 import Options.Applicative
 import Data.Semigroup ((<>))
-
+import System.Random
 import Graphics.Gloss.Data.ViewPort
 
 
@@ -68,7 +68,7 @@ parseAndDraw (Sample gen True steps target) = do
 
 executeDrawing :: AdvMem -> Int -> State Drawer Picture
 executeDrawing mem gen = do
-                        execAtoms (M.findWithDefault [] (Ide(axiom mem)) (memory mem)) mem gen
+                        execProbMap (M.findWithDefault M.empty (Ide(axiom mem)) (memory mem)) mem gen
                         pictures <- get
                         return (Pictures (reverse $ getPics $ pic $ pictures))
 
@@ -86,6 +86,20 @@ getNewPicture v f (p, Pictures []) = (p, Pictures [])
 
 -- 3. Hier werden die Atome ausgeführt, das heißt eine Liste aus Bilder wird erstellt
 
+
+execProbMap :: ProbMap -> AdvMem -> Int -> State Drawer ()
+execProbMap pM m gen = do
+                    let random = if gen `mod` 2 == 0 then 0.3 else 0.8
+                    --trueRand <- randomIO TODO insert randomness
+                    let key = M.lookupGE random pM
+                    case key of 
+                        Just (k,v) -> do
+                                     execAtoms v m gen
+                        Nothing -> do
+                                    return()
+                    return ()
+
+
 execAtoms :: [Atom] -> AdvMem -> Int -> State Drawer ()
 execAtoms [] _ _ = return ()
 execAtoms (x:xs) m gen =  if gen <= 0 then return () else
@@ -99,9 +113,9 @@ execAtom :: Atom -> AdvMem -> Int -> State Drawer ()
 execAtom a m gen = case a of
                 Symb s -> do
                             symbolToDrawer s (angle m)
-                            execAtoms ( M.findWithDefault [] (Symb s) (memory m)) m (gen-1)
+                            execProbMap ( M.findWithDefault M.empty (Symb s) (memory m)) m (gen-1)
                 Ide c -> do
-                            execAtoms ( M.findWithDefault [] (Ide c) (memory m)) m (gen-1)
+                            execProbMap ( M.findWithDefault M.empty (Ide c) (memory m)) m (gen-1)
 
 
 symbolToDrawer :: Symbol -> Int -> State Drawer ()
@@ -115,14 +129,20 @@ symbolToDrawer s i = case s of
                 Push -> pushPosition
                 Pop -> popPosition
 
+
 -- 4. Evaluierung von geparsten Elementen zu Memory
 --TODO rename, remove unnecessary writer monad
 type Log = [String]
-type Memory = M.Map Atom [Atom]
+type Memory = M.Map Atom ProbMap
 type Logging = WriterT Log (State AdvMem) () 
+type Command = [Atom]
+
+type ProbMap = M.Map Float [Atom]
 
 data AdvMem = AdvMem {axiom :: Char, angle :: Int, memory :: Memory}
             deriving (Show,Eq)
+
+someTestString = "angle 70 axiom X X -> F-X+F-F+X"
 
 getMap s = snd (runIt s)
 
@@ -170,12 +190,21 @@ evalRules (x:xs) = do
                     return ()
 
 evalRule :: Rule -> Logging
-evalRule (Rule i atoms) = do -- store string in state
-            tell["Storing my atoms to given Id:" ++ show i]
+evalRule (Rule i atoms) = do
             AdvMem ax ang mem <- get
-            let newMap = M.insert i atoms mem
+            let prob1Map = M.insert 1.0 atoms M.empty
+            let newMap = M.insert i prob1Map mem
             put (AdvMem ax ang newMap)
-            tell ["Done storing atomes."]
+            return ()
+
+evalRule (RuleP i prob atoms) = do
+            AdvMem ax ang mem <- get
+            let probMapOfI = M.findWithDefault M.empty i mem 
+            let probSum = (foldr (+) 0 (M.keys probMapOfI)) + prob
+            let probMap = M.insert probSum atoms probMapOfI
+            let newMap = M.insert i probMap mem
+            put (AdvMem ax ang newMap)
+            return ()
 
 
 
@@ -183,12 +212,13 @@ evalRule (Rule i atoms) = do -- store string in state
 
 type Id = Char
 type NumI = Int
+type Prob = Float
 
 data System = System [Header] [Rule]
      deriving (Show, Eq)
 data Header = Axiom Id | Angle Int
   deriving (Show, Eq)
-data Rule = Rule Atom [Atom]
+data Rule = Rule Atom [Atom] | RuleP Atom Prob [Atom]
   deriving (Show, Eq)
 data Atom = Symb Symbol | Ide Char
   deriving (Show, Eq, Ord)
@@ -218,6 +248,8 @@ parseId = try (\token -> case token of
 
 parseRule :: ParserC Token Rule --(Id parser?, many1 or many?)
 parseRule = Rule <$> (parseAtom <* lit TAsgn) <*> (many1 parseAtom)
+            <|>
+            RuleP <$> parseAtom <*> parseProb <*> (many1 parseAtom)
 
 parseHeader :: ParserC Token Header
 parseHeader = Axiom <$> (lit TAxiom *> parseId)
@@ -228,6 +260,12 @@ parseNum = try (\token -> case token of
                               TNum x-> Just x
                               _ -> Nothing)
 
+parseProb :: ParserC Token Prob
+parseProb = try (\token -> case token of
+                              TProb x-> Just x
+                              _ -> Nothing)
+
+
 -- 6. Lexer: String -> Tokens
 -- Use this lexer to tokenize the input before parsing
 data Token = TAsgn -- '->'
@@ -237,12 +275,14 @@ data Token = TAsgn -- '->'
            | TNewLine
            | TAxiom
            | TAngle
+           | TProb Float
   deriving (Eq, Show)
 
 lexer :: String -> Maybe [Token]
 lexer = parse $ many1 (skipSpace *> p_tok) <* skipSpace
 
 skipSpace = many (satisfy isSpace)
+p_tok :: ParserC Char Token
 p_tok =
   t_newline
   <|> t_num
@@ -250,6 +290,7 @@ p_tok =
   <|> t_symbol
   <|> t_id
   <|> t_alnum
+  <|> t_prob
 
 
 t_symbol = fmap TSymb $
@@ -262,7 +303,8 @@ t_symbol = fmap TSymb $
         <|> Push <$ lit '['
         <|> Pop <$ lit ']'
 
-
+t_prob :: ParserC Char Token
+t_prob = TProb . read <$> (string "-" *>  many1 ((satisfy isDigit)<|> lit '.') <* lit '>')
 t_num = TNum . read <$> many1 (satisfy isDigit)
 t_asgn = TAsgn <$ string "->"
 t_newline = TNewLine <$ lit '\n'
