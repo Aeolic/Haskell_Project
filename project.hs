@@ -19,7 +19,7 @@ Wir könnten noch Farben machen + Automatischen Viewport, dass man immer das gan
 
 -- 1. Der Parser fürs CLI
 data Sample =
-    Sample {generations :: Int, animate :: Bool, framesPerSecond :: Int, target :: String}
+    Sample {generations :: Int, animate :: Bool, colorful :: Bool, framesPerSecond :: Int, target :: String}
 
 sample :: Parser Sample
 sample = Sample <$> option positiveNumber
@@ -33,10 +33,14 @@ sample = Sample <$> option positiveNumber
                     ( long "animate"
                     <> short 'a'
                     <> help "Whether the drawing is animated or static." )
+                <*> switch
+                    ( long "colorful"
+                    <> short 'c'
+                    <> help "Life is beautiful." )
                 <*> option positiveNumber
                     (long "frames"
                     <> short 'f'
-                    <> help "Number of Frames drawn per second, when program is start with '--animate'."
+                    <> help "Number of Frames drawn per second if program is started with '--animate'."
                     <> showDefault
                     <> value 20
                     <> metavar "Int")
@@ -65,18 +69,18 @@ main = do
                      <> header "Tamara and Jureks amazing haskell drawing machine." ))
 
 parseAndDraw :: Sample -> IO ()
-parseAndDraw (Sample gen False _ target) = do
+parseAndDraw (Sample gen False c _ target) = do
                                 contents <- readFile target
                                 let (res, advMem) = getAdvMem contents
                                 case res of
                                   (Right _) -> do
-                                             myPic <- evalStateT (executeDrawing advMem gen) myDrawer
+                                             myPic <- evalStateT (executeDrawing advMem gen) (makeMyDrawer c)
                                              drawPicture $ myPic
                                   (Left s) -> putStrLn s
 
-parseAndDraw (Sample gen True steps target) = do
+parseAndDraw (Sample gen True c steps target) = do
                                 contents <- readFile target
-                                startPic <- getPictures contents gen
+                                startPic <- getPictures contents gen c
                                 simulate (InWindow "Animation" (1200, 800) (0, 0))
                                     white steps startPic modToPic getNewPicture
 
@@ -88,10 +92,10 @@ executeDrawing mem gen = do
                         return (Pictures (reverse $ getPics $ pic $ pictures)) -- das ist schon mit Abstand die geilste Zeile code :D
 
 -- Execution with animation
-getPictures :: String -> Int -> IO (Picture,Picture)
-getPictures s gen = do
+getPictures :: String -> Int -> Bool -> IO (Picture,Picture)
+getPictures s gen c = do
                     let (red, advMem) = getAdvMem s -- Hier bewusst kein Error Handling?
-                    myPic <- evalStateT (executeDrawing (advMem) gen) myDrawer
+                    myPic <- evalStateT (executeDrawing (advMem) gen) (makeMyDrawer c)
                     return (Pictures[Blank], myPic)
 
 modToPic :: (Picture,Picture) -> Picture
@@ -104,7 +108,7 @@ getNewPicture v f (p, Pictures []) = (p, Pictures [])
 
 -- Helper for randomized L-systems
 getRandomFloat :: IO Float
-getRandomFloat = do 
+getRandomFloat = do
         num <- randomRIO (0,100)
         return (num/100)
 
@@ -113,7 +117,7 @@ execProbMap :: ProbMap -> AdvMem -> Int ->  MyState ()
 execProbMap pM m gen = do
                     randFloat <- liftIO $ getRandomFloat
                     let key = M.lookupGE randFloat pM
-                    case key of 
+                    case key of
                         Just (k,v) -> do
                                      execAtoms v m gen
                         Nothing -> do
@@ -332,7 +336,7 @@ t_newline = TNewLine <$ lit '\n'
 t_alnum = fmap mkToken $ (:) <$> satisfy isAlpha <*> many (satisfy isAlphaNum)
   where mkToken "axiom" = TAxiom
         mkToken "angle" = TAngle
-        mkToken i = TId 'O' --darf nie erreicht werden 
+        mkToken i = TId 'O' --darf nie erreicht werden
 
 isAlphaAndUpper :: Char -> Bool
 isAlphaAndUpper c = isAlpha c && isUpper c
