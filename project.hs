@@ -14,8 +14,10 @@ import Data.Semigroup ((<>))
 import System.Random
 import Graphics.Gloss.Data.ViewPort
 
-
---TODO sortieren!
+{-
+Sortierst du noch DrawerM ein bisschen? :D
+Wir könnten noch Farben machen + Automatischen Viewport, dass man immer das ganze Bild sieht bei ner Animation
+-}
 
 -- 1. Der Parser fürs CLI
 data Sample = 
@@ -27,7 +29,7 @@ sample = Sample <$> option auto
                     <> short 'g'
                     <> help "Number of generations."
                     <> showDefault
-                    <> value 10
+                    <> value 7
                     <> metavar "Int")
                 <*> switch
                     ( long "animate"
@@ -54,26 +56,32 @@ main :: IO ()
 main = do
         parseAndDraw =<< execParser (info (sample <**> helper)
                       ( fullDesc
-                     <> progDesc "Executes a drawing for the dragon Curve!"
+                     <> progDesc "Executes a drawing for the L-System specified in 'system.txt'!"
                      <> header "Tamara and Jureks amazing haskell drawing machine." ))
 
 parseAndDraw :: Sample -> IO ()
 parseAndDraw (Sample gen False _ target) = do 
                                 contents <- readFile target
-                                drawPicture $ evalState (executeDrawing (getMap contents) gen) myDrawer
+                                myPic <- evalStateT (executeDrawing (getAdvMem contents) gen) myDrawer
+                                drawPicture $ myPic
 parseAndDraw (Sample gen True steps target) = do
                                 contents <- readFile target
+                                startPic <- getPictures contents gen
                                 simulate (InWindow "Animation" (1200, 800) (0, 0))
-                                    white steps (getPictures contents gen) modToPic getNewPicture
+                                    white steps startPic modToPic getNewPicture
 
-executeDrawing :: AdvMem -> Int -> State Drawer Picture
+-- Execution without animation
+executeDrawing :: AdvMem -> Int -> MyState Picture
 executeDrawing mem gen = do
                         execProbMap (M.findWithDefault M.empty (Ide(axiom mem)) (memory mem)) mem gen
                         pictures <- get
-                        return (Pictures (reverse $ getPics $ pic $ pictures))
+                        return (Pictures (reverse $ getPics $ pic $ pictures)) -- das ist schon mit Abstand die geilste Zeile code :D
 
-getPictures :: String -> Int -> (Picture,Picture)
-getPictures s gen = (Pictures[Blank], evalState (executeDrawing (getMap s) gen) myDrawer)
+-- Execution with animation
+getPictures :: String -> Int -> IO (Picture,Picture)
+getPictures s gen = do
+                    myPic <- evalStateT (executeDrawing (getAdvMem s) gen) myDrawer
+                    return (Pictures[Blank], myPic)
 
 modToPic :: (Picture,Picture) -> Picture
 modToPic (x,y) = x
@@ -83,15 +91,18 @@ getNewPicture :: ViewPort -> Float -> (Picture,Picture) -> (Picture,Picture)
 getNewPicture v f ( p,Pictures (y:ys)) = (Pictures [p,y] ,Pictures ys)
 getNewPicture v f (p, Pictures []) = (p, Pictures [])
 
+-- Helper for randomized L-systems
+getRandomFloat :: IO Float
+getRandomFloat = do 
+        num <- randomRIO (0,100)
+        return (num/100)
+
 
 -- 3. Hier werden die Atome ausgeführt, das heißt eine Liste aus Bilder wird erstellt
-
-
-execProbMap :: ProbMap -> AdvMem -> Int -> State Drawer ()
+execProbMap :: ProbMap -> AdvMem -> Int ->  MyState ()
 execProbMap pM m gen = do
-                    let random = if gen `mod` 2 == 0 then 0.3 else 0.8
-                    --trueRand <- randomIO TODO insert randomness
-                    let key = M.lookupGE random pM
+                    randFloat <- liftIO $ getRandomFloat
+                    let key = M.lookupGE randFloat pM
                     case key of 
                         Just (k,v) -> do
                                      execAtoms v m gen
@@ -100,7 +111,7 @@ execProbMap pM m gen = do
                     return ()
 
 
-execAtoms :: [Atom] -> AdvMem -> Int -> State Drawer ()
+execAtoms :: [Atom] -> AdvMem -> Int ->  MyState ()
 execAtoms [] _ _ = return ()
 execAtoms (x:xs) m gen =  if gen <= 0 then return () else
                     do
@@ -109,7 +120,7 @@ execAtoms (x:xs) m gen =  if gen <= 0 then return () else
                     return ()
 
 
-execAtom :: Atom -> AdvMem -> Int -> State Drawer ()
+execAtom :: Atom -> AdvMem -> Int ->  MyState ()
 execAtom a m gen = case a of
                 Symb s -> do
                             symbolToDrawer s (angle m)
@@ -118,7 +129,7 @@ execAtom a m gen = case a of
                             execProbMap ( M.findWithDefault M.empty (Ide c) (memory m)) m (gen-1)
 
 
-symbolToDrawer :: Symbol -> Int -> State Drawer ()
+symbolToDrawer :: Symbol -> Int ->  MyState ()
 symbolToDrawer s i = case s of
                 DrawF -> drawForward
                 DrawB -> drawBackward
@@ -142,11 +153,9 @@ type ProbMap = M.Map Float [Atom]
 data AdvMem = AdvMem {axiom :: Char, angle :: Int, memory :: Memory}
             deriving (Show,Eq)
 
-someTestString = "angle 70 axiom X X -> F-X+F-F+X"
-
-getMap s = snd (runIt s)
-
-runIt s = runState (runWriterT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
+-- parses and then evaluates a given String and returns an AdvMem
+getAdvMem :: String -> AdvMem
+getAdvMem s = execState (runWriterT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
 
 parseAndEvaluate :: String -> Logging
 parseAndEvaluate s = case parseString s of
@@ -311,13 +320,13 @@ t_newline = TNewLine <$ lit '\n'
 t_alnum = fmap mkToken $ (:) <$> satisfy isAlpha <*> many (satisfy isAlphaNum)
   where mkToken "axiom" = TAxiom
         mkToken "angle" = TAngle
-        mkToken i = TId 'O' --darf nie erreicht werden (siehe hack unten)
+        mkToken i = TId 'O' --darf nie erreicht werden 
 
 isAlphaAndUpper :: Char -> Bool
 isAlphaAndUpper c = isAlpha c && isUpper c
 
 t_id :: ParserC Char Token
-t_id = TId <$> satisfy isAlphaAndUpper -- übler hack!!! aber gerade keinen Plan wie das sonst gehen soll :D
+t_id = TId <$> satisfy isAlphaAndUpper
 
 -- ^ Utilities
 string xs = foldr (liftA2 (:)) (pure []) $  map lit xs

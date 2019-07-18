@@ -10,20 +10,19 @@ module DrawerM (
   drawBackward,
   getPicture,
   drawPicture,
-  execDrawing,
   myDrawer,
   pushPosition,
   popPosition,
-  getPics
+  getPics,
+  MyState
   )
-
 
 where
 import Graphics.Gloss
---import Graphics.Gloss.Export
 import Control.Monad.State
 import Data.Fixed
 
+type MyState a = StateT Drawer IO a
 
 type Stack = [Cursor]
 
@@ -44,21 +43,21 @@ rotate :: Float -> Cursor -> Cursor
 rotate angle c = Cursor (anchor c) (makeDegrees (orientation c + angle))
 
 -- takes an angle
-rotateLeft :: Float -> State Drawer ()
+rotateLeft :: Float -> MyState ()
 rotateLeft angle = do
   Drawer c l p s <- get
   let newC = DrawerM.rotate angle c
   put $ Drawer newC l p s
 
 -- takes an angle
-rotateRight :: Float -> State Drawer ()
+rotateRight :: Float -> MyState ()
 rotateRight angle = do
   Drawer c l p s <- get
   let newC = DrawerM.rotate (360.0 - angle) c
   put $ Drawer newC l p s
 
 -- move cursor forward depending current orientation and line length
-moveForward :: State Drawer ()
+moveForward :: MyState ()
 moveForward = do
   Drawer c l p s <- get
   let angle = makeDegrees $ (orientation c) + 180.0
@@ -66,7 +65,7 @@ moveForward = do
   let newC = Cursor newAnchor (orientation c)
   put $ Drawer newC l p s
 
-moveBackward :: State Drawer ()
+moveBackward :: MyState ()
 moveBackward = do
   Drawer c l p s <- get
   let newAnchor = calcNewCoords (orientation c) l (anchor c)
@@ -83,7 +82,7 @@ radians d = d * (pi/180.0)
 createLine :: Float -> Float -> Point -> Path
 createLine o l p = [p, calcNewCoords o l p]
 
-drawForward :: State Drawer ()
+drawForward :: MyState ()
 drawForward = do
              Drawer c l p s <- get
              let path = createLine (orientation c) l (anchor c)
@@ -94,37 +93,37 @@ drawForward = do
 getPics :: Picture -> [Picture]
 getPics (Pictures a) = a
 
-drawBackward :: State Drawer ()
+drawBackward :: MyState ()
 drawBackward = do
   Drawer c l p s <- get
   let path = createLine (orientation c) (-l) (anchor c)
   let newAnchor = last path
   put (Drawer (Cursor newAnchor $ orientation c) l (Pictures [p, Line path]) s)
 
-pushPosition :: State Drawer ()
+pushPosition :: MyState ()
 pushPosition = do
               Drawer c l p s <- get
               put $ Drawer c l p (c:s)
 
-popPosition :: State Drawer ()
+popPosition :: MyState ()
 popPosition = do
               Drawer c l p s <- get
               put $ Drawer (head s) l p (tail s)
 
-getPicture :: State Drawer Picture
+getPicture :: MyState Picture
 getPicture = do
   d <- get
   put d
   return $ pic d
 
-composePicture :: State Drawer Picture
+composePicture :: MyState Picture
 composePicture = do
   drawForward
   rotateLeft 90.0
   drawForward
   getPicture
 
-drawPicture :: Picture -> IO ()
-drawPicture p = display (InWindow "My Window" (800, 600) (10, 10)) white $ p
 
-execDrawing = drawPicture $ fst $ runState composePicture myDrawer
+drawPicture :: Picture -> IO ()
+drawPicture p = do
+  display (InWindow "My Window" (800, 600) (10, 10)) white $ p

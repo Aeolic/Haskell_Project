@@ -1,4 +1,3 @@
+axiom F
 angle 45
-axiom X 
-X -0.3> FF+FFX
-X -0.7> FF-FFX
+F ? F
