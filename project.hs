@@ -1,11 +1,9 @@
-import Control.Applicative
-import Control.Monad
 import Data.Function
 import Data.List
 import Data.Maybe
 import Data.Char
 import Control.Monad.State
-import Control.Monad.Writer
+import Control.Monad.Except
 import qualified Data.Map.Strict as M
 import ParserCon
 import DrawerM
@@ -20,11 +18,11 @@ Wir könnten noch Farben machen + Automatischen Viewport, dass man immer das gan
 -}
 
 -- 1. Der Parser fürs CLI
-data Sample = 
+data Sample =
     Sample {generations :: Int, animate :: Bool, framesPerSecond :: Int, target :: String}
 
 sample :: Parser Sample
-sample = Sample <$> option auto
+sample = Sample <$> option positiveNumber
                     (long "generations"
                     <> short 'g'
                     <> help "Number of generations."
@@ -35,7 +33,7 @@ sample = Sample <$> option auto
                     ( long "animate"
                     <> short 'a'
                     <> help "Whether the drawing is animated or static." )
-                <*> option auto
+                <*> option positiveNumber
                     (long "frames"
                     <> short 'f'
                     <> help "Number of Frames drawn per second, when program is start with '--animate'."
@@ -50,6 +48,13 @@ sample = Sample <$> option auto
                     <> showDefault
                     <> value "system.txt" )
 
+positiveNumber :: ReadM Int
+positiveNumber = do
+  i <- auto
+  case (\i -> if i > 0 then True else False) i of
+   True  -> return i
+   False -> readerError "Number must be >0"
+
 -- 2. Top level execution + helper methods
 
 main :: IO ()
@@ -60,10 +65,15 @@ main = do
                      <> header "Tamara and Jureks amazing haskell drawing machine." ))
 
 parseAndDraw :: Sample -> IO ()
-parseAndDraw (Sample gen False _ target) = do 
+parseAndDraw (Sample gen False _ target) = do
                                 contents <- readFile target
-                                myPic <- evalStateT (executeDrawing (getAdvMem contents) gen) myDrawer
-                                drawPicture $ myPic
+                                let (res, advMem) = getAdvMem contents
+                                case res of
+                                  (Right _) -> do
+                                             myPic <- evalStateT (executeDrawing advMem gen) myDrawer
+                                             drawPicture $ myPic
+                                  (Left s) -> putStrLn s
+
 parseAndDraw (Sample gen True steps target) = do
                                 contents <- readFile target
                                 startPic <- getPictures contents gen
@@ -80,7 +90,8 @@ executeDrawing mem gen = do
 -- Execution with animation
 getPictures :: String -> Int -> IO (Picture,Picture)
 getPictures s gen = do
-                    myPic <- evalStateT (executeDrawing (getAdvMem s) gen) myDrawer
+                    let (red, advMem) = getAdvMem s -- Hier bewusst kein Error Handling?
+                    myPic <- evalStateT (executeDrawing (advMem) gen) myDrawer
                     return (Pictures[Blank], myPic)
 
 modToPic :: (Picture,Picture) -> Picture
@@ -96,7 +107,6 @@ getRandomFloat :: IO Float
 getRandomFloat = do 
         num <- randomRIO (0,100)
         return (num/100)
-
 
 -- 3. Hier werden die Atome ausgeführt, das heißt eine Liste aus Bilder wird erstellt
 execProbMap :: ProbMap -> AdvMem -> Int ->  MyState ()
@@ -136,16 +146,14 @@ symbolToDrawer s i = case s of
                 MoveF -> moveForward
                 MoveB -> moveBackward
                 PlusR -> rotateRight (fromIntegral i)
-                MinusR -> rotateLeft (fromIntegral i) 
+                MinusR -> rotateLeft (fromIntegral i)
                 Push -> pushPosition
                 Pop -> popPosition
 
 
 -- 4. Evaluierung von geparsten Elementen zu Memory
---TODO rename, remove unnecessary writer monad
-type Log = [String]
 type Memory = M.Map Atom ProbMap
-type Logging = WriterT Log (State AdvMem) () 
+type LSystem = ExceptT String (State AdvMem) ()
 type Command = [Atom]
 
 type ProbMap = M.Map Float [Atom]
@@ -153,52 +161,57 @@ type ProbMap = M.Map Float [Atom]
 data AdvMem = AdvMem {axiom :: Char, angle :: Int, memory :: Memory}
             deriving (Show,Eq)
 
--- parses and then evaluates a given String and returns an AdvMem
-getAdvMem :: String -> AdvMem
-getAdvMem s = execState (runWriterT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
+--getAdvMem :: String -> AdvMem
+getAdvMem s = runState (runExceptT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
 
-parseAndEvaluate :: String -> Logging
-parseAndEvaluate s = case parseString s of
-                      Just p -> eval p
-                      Nothing -> do
-                                tell ["ERROR"]
+parseAndEvaluate :: String -> LSystem
+parseAndEvaluate s = do
+  case parseString s of
+    Just p -> eval p
+    Nothing -> throwError "Error: Couldn't parse L-system"
 
-eval :: System -> Logging
+eval :: System -> LSystem
 eval (System h r) = do
-                    tell ["Evaluating Headers"]
+                    --tell ["Evaluating Headers"]
                     headers <- evalHeaders h
                     rules <- evalRules r
                     return ()
 
-evalHeaders :: [Header] -> Logging
-evalHeaders [] = return ()
+evalHeaders :: [Header] -> LSystem
+evalHeaders [] = do
+                 AdvMem ax ang mem <- get
+                 case ax of
+                   '-' -> throwError "Error: No Axiom found"
+                   _ -> return ()
 evalHeaders (x:xs) = do
                     evalFirst <- evalHeader x
                     evalRest <- evalHeaders xs
-                    return ()
+                    return evalRest
 
 
-evalHeader :: Header -> Logging
+evalHeader :: Header -> LSystem
 evalHeader h = case h of
                 Axiom axiom -> do
                             AdvMem ax ang mem <- get
-                            tell ["Found Axiom " ++ show axiom]
+                            --tell ["Found Axiom " ++ show axiom]
                             put (AdvMem axiom ang mem)
 
                 Angle int -> do
                             AdvMem ax ang mem <- get
-                            tell ["Found Angle " ++ show int]
+                            --tell ["Found Angle " ++ show int]
                             put (AdvMem ax int mem)
 
 
-evalRules :: [Rule] -> Logging
-evalRules [] = return ()
+evalRules :: [Rule] -> LSystem
+evalRules [] = do
+              -- TODO Error Handling
+              return ()
 evalRules (x:xs) = do
                     evalFirst <- evalRule x
                     evalRest <- evalRules xs
-                    return ()
+                    return evalRest
 
-evalRule :: Rule -> Logging
+evalRule :: Rule -> LSystem
 evalRule (Rule i atoms) = do
             AdvMem ax ang mem <- get
             let prob1Map = M.insert 1.0 atoms M.empty
@@ -208,13 +221,12 @@ evalRule (Rule i atoms) = do
 
 evalRule (RuleP i prob atoms) = do
             AdvMem ax ang mem <- get
-            let probMapOfI = M.findWithDefault M.empty i mem 
+            let probMapOfI = M.findWithDefault M.empty i mem
             let probSum = (foldr (+) 0 (M.keys probMapOfI)) + prob
             let probMap = M.insert probSum atoms probMapOfI
             let newMap = M.insert i probMap mem
             put (AdvMem ax ang newMap)
             return ()
-
 
 
 -- 5. Parsing: Parst gelexten String zu Datentypen
