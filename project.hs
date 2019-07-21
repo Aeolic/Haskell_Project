@@ -87,7 +87,7 @@ parseAndDraw (Sample gen True c steps target) = do
 -- Execution without animation
 executeDrawing :: AdvMem -> Int -> MyState Picture
 executeDrawing mem gen = do
-                        execProbMap (M.findWithDefault M.empty (Ide(axiom mem)) (memory mem)) mem gen
+                        execAtoms (axiom mem) mem gen
                         pictures <- get
                         return (Pictures (reverse $ getPics $ pic $ pictures)) -- das ist schon mit Abstand die geilste Zeile code :D
 
@@ -95,7 +95,7 @@ executeDrawing mem gen = do
 getPictures :: String -> Int -> Bool -> IO (Picture,Picture)
 getPictures s gen c = do
                     let (red, advMem) = getAdvMem s -- Hier bewusst kein Error Handling?
-                    myPic <- evalStateT (executeDrawing (advMem) gen) (makeMyDrawer c)
+                    myPic <- evalStateT (executeDrawing advMem gen) (makeMyDrawer c)
                     return (Pictures[Blank], myPic)
 
 modToPic :: (Picture,Picture) -> Picture
@@ -162,11 +162,11 @@ type Command = [Atom]
 
 type ProbMap = M.Map Float [Atom]
 
-data AdvMem = AdvMem {axiom :: Char, angle :: Int, memory :: Memory}
+data AdvMem = AdvMem {axiom :: [Atom], angle :: Int, memory :: Memory}
             deriving (Show,Eq)
 
 --getAdvMem :: String -> AdvMem
-getAdvMem s = runState (runExceptT (parseAndEvaluate s)) (AdvMem '-' 0 M.empty)
+getAdvMem s = runState (runExceptT (parseAndEvaluate s)) (AdvMem [] 0 M.empty)
 
 parseAndEvaluate :: String -> LSystem
 parseAndEvaluate s = do
@@ -185,7 +185,7 @@ evalHeaders :: [Header] -> LSystem
 evalHeaders [] = do
                  AdvMem ax ang mem <- get
                  case ax of
-                   '-' -> throwError "Error: No Axiom found"
+                   [] -> throwError "Error: No Axiom found"
                    _ -> return ()
 evalHeaders (x:xs) = do
                     evalFirst <- evalHeader x
@@ -241,7 +241,7 @@ type Prob = Float
 
 data System = System [Header] [Rule]
      deriving (Show, Eq)
-data Header = Axiom Id | Angle Int
+data Header = Axiom [Atom] | Angle Int
   deriving (Show, Eq)
 data Rule = Rule Atom [Atom] | RuleP Atom Prob [Atom]
   deriving (Show, Eq)
@@ -277,7 +277,7 @@ parseRule = Rule <$> (parseAtom <* lit TAsgn) <*> (many1 parseAtom)
             RuleP <$> parseAtom <*> parseProb <*> (many1 parseAtom)
 
 parseHeader :: ParserC Token Header
-parseHeader = Axiom <$> (lit TAxiom *> parseId)
+parseHeader = Axiom <$> (lit TAxiom *> (many1 parseAtom) )
               <|> Angle <$> (lit TAngle *> parseNum)
 
 parseNum :: ParserC Token NumI

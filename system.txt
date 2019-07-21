@@ -1,3 +1,4 @@
-axiom F
-angle 45
-F ? F
+angle 60
+axiom FXF--FF--FF
+X -> --FXF++FXF++FXF--
+F -> FF

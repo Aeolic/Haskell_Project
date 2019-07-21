@@ -1,4 +1,4 @@
-angle 90 
-axiom X 
+angle 45
+axiom X+FY 
 X -> X+YF+ 
 Y -> -FX-Y
