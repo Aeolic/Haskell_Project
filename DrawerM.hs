@@ -34,11 +34,14 @@ data Drawer = Drawer {cursor :: Cursor, lineLength :: Float, colorState :: Color
   deriving(Show)
 type Degrees = Int
 
-initCursor = Cursor (0, 0) 0
-makeMyDrawer c = Drawer initCursor 5.0 (ColorState c black 0) (Pictures [Blank]) []
+initCursor = Cursor (0,0) 0
+makeMyDrawer f = Drawer initCursor 5.0 (ColorState f black 0) (Pictures [Blank]) []
 
 makeDegrees :: Float -> Float
 makeDegrees a = a `mod'` 360
+
+radians :: Float -> Float
+radians d = d * (pi/180)
 
 incrementColor :: ColorState -> ColorState
 incrementColor (ColorState f rgb c) | f = let r = (sin $ radians (0.3* (fromIntegral c))) * 127 + 128
@@ -51,14 +54,12 @@ incrementColor (ColorState f rgb c) | f = let r = (sin $ radians (0.3* (fromInte
 rotate :: Float -> Cursor -> Cursor
 rotate angle c = Cursor (anchor c) (makeDegrees (orientation c + angle))
 
--- takes an angle
 rotateLeft :: Float -> MyState ()
 rotateLeft angle = do
   Drawer c l cs p s <- get
   let newC = DrawerM.rotate angle c
   put $ Drawer newC l cs p s
 
--- takes an angle
 rotateRight :: Float -> MyState ()
 rotateRight angle = do
   Drawer c l cs p s <- get
@@ -85,9 +86,6 @@ moveBackward = do
 calcNewCoords :: Float -> Float -> Point -> Point
 calcNewCoords o l (x,y) = ((cos $ radians o) * l + x, (sin $ (radians o)) * l + y)
 
-radians :: Float -> Float
-radians d = d * (pi/180)
-
 createLine :: Float -> Float -> Point -> Path
 createLine o l p = [p, calcNewCoords o l p]
 
@@ -98,10 +96,6 @@ drawForward = do
              let newAnchor = last path
              let newPic = color (rgb cs) (Line path)
              put (Drawer (Cursor newAnchor $ orientation c) l (incrementColor cs) (Pictures (newPic:(getPics p))) s)
-
-
-getPics :: Picture -> [Picture]
-getPics (Pictures a) = a
 
 drawBackward :: MyState ()
 drawBackward = do
@@ -121,6 +115,11 @@ popPosition = do
               Drawer c l cs p s <- get
               put $ Drawer (head s) l cs p (tail s)
 
+-- unwraps list of pictures from Picture
+getPics :: Picture -> [Picture]
+getPics (Pictures a) = a
+
+-- unwraps the Picture from the state structure
 getPicture :: MyState Picture
 getPicture = do
   d <- get

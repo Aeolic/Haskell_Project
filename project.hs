@@ -52,9 +52,10 @@ sample = Sample <$> option positiveNumber
                     <> showDefault
                     <> value "system.txt" )
 
+-- ReadM a = ReaderT String Except a
 positiveNumber :: ReadM Int
 positiveNumber = do
-  i <- auto
+  i <- auto   -- i = number parsed by Option reader auto
   case (\i -> if i > 0 then True else False) i of
    True  -> return i
    False -> readerError "Number must be >0"
@@ -74,6 +75,7 @@ parseAndDraw (Sample gen False c _ target) = do
                                 let (res, advMem) = getAdvMem contents
                                 case res of
                                   (Right _) -> do
+
                                              myPic <- evalStateT (executeDrawing advMem gen) (makeMyDrawer c)
                                              drawPicture $ myPic
                                   (Left s) -> putStrLn s
@@ -86,20 +88,21 @@ parseAndDraw (Sample gen True c steps target) = do
                                               finalPic <- evalStateT (executeDrawing (advMem) gen) (makeMyDrawer c)
                                               let startPic = (Pictures[Blank],finalPic)
                                               simulate (InWindow "Animation" (1200, 800) (0, 0))
-                                                  white steps startPic modToPic getNewPicture
+                                                  white steps startPic modelToPic getNewPicture
                                   (Left s) -> putStrLn s
 
--- Execution without animation
+-- executes all drawing commands on the drawing state monad to obtain the final picture structure
 executeDrawing :: AdvMem -> Int -> MyState Picture
 executeDrawing mem gen = do
                         execAtoms (axiom mem) mem gen
                         pictures <- get
-                        return (Pictures (reverse $ getPics $ pic $ pictures)) -- das ist schon mit Abstand die geilste Zeile code :D
+                        return (Pictures (reverse $ getPics $ pic $ pictures)) -- reverse for animation (draw first pic fist)
 
-modToPic :: (Picture,Picture) -> Picture
-modToPic (x,y) = x
+-- extract pics to draw from model
+modelToPic :: (Picture,Picture) -> Picture
+modelToPic (x,y) = x
 
-
+-- model = two lists of pictures: (pics to draw, pics not yet drawn)
 getNewPicture :: ViewPort -> Float -> (Picture,Picture) -> (Picture,Picture)
 getNewPicture v f ( p,Pictures (y:ys)) = (Pictures [p,y] ,Pictures ys)
 getNewPicture v f (p, Pictures []) = (p, Pictures [])
@@ -111,6 +114,7 @@ getRandomFloat = do
         return (num/100)
 
 -- 3. Hier werden die Atome ausgeführt, das heißt eine Liste aus Bilder wird erstellt
+-- depth-first execution of atoms until generation cap
 execProbMap :: ProbMap -> AdvMem -> Int ->  MyState ()
 execProbMap pM m gen = do
                     randFloat <- liftIO $ getRandomFloat
@@ -153,7 +157,7 @@ symbolToDrawer s i = case s of
 
 -- 4. Evaluierung von geparsten Elementen zu Memory
 type Memory = M.Map Atom ProbMap
-type LSystem = ExceptT String (State AdvMem) ()
+type LSystem = ExceptT String (State AdvMem) ()  --ExceptT (m (Either e a)) -> Left = exception
 type Command = [Atom]
 
 type ProbMap = M.Map Float [Atom]
@@ -162,6 +166,7 @@ data AdvMem = AdvMem {axiom :: [Atom], angle :: Int, memory :: Memory}
             deriving (Show,Eq)
 
 --getAdvMem :: String -> AdvMem
+-- runState -> (res, state)
 getAdvMem s = runState (runExceptT (parseAndEvaluate s)) (AdvMem [] 0 M.empty)
 
 parseAndEvaluate :: String -> LSystem
