@@ -80,9 +80,14 @@ parseAndDraw (Sample gen False c _ target) = do
 
 parseAndDraw (Sample gen True c steps target) = do
                                 contents <- readFile target
-                                startPic <- getPictures contents gen c
-                                simulate (InWindow "Animation" (1200, 800) (0, 0))
-                                    white steps startPic modToPic getNewPicture
+                                let (res, advMem) = getAdvMem contents
+                                case res of
+                                  (Right _) -> do
+                                              finalPic <- evalStateT (executeDrawing (advMem) gen) (makeMyDrawer c)
+                                              let startPic = (Pictures[Blank],finalPic)
+                                              simulate (InWindow "Animation" (1200, 800) (0, 0))
+                                                  white steps startPic modToPic getNewPicture
+                                  (Left s) -> putStrLn s
 
 -- Execution without animation
 executeDrawing :: AdvMem -> Int -> MyState Picture
@@ -90,13 +95,6 @@ executeDrawing mem gen = do
                         execAtoms (axiom mem) mem gen
                         pictures <- get
                         return (Pictures (reverse $ getPics $ pic $ pictures)) -- das ist schon mit Abstand die geilste Zeile code :D
-
--- Execution with animation
-getPictures :: String -> Int -> Bool -> IO (Picture,Picture)
-getPictures s gen c = do
-                    let (red, advMem) = getAdvMem s -- Hier bewusst kein Error Handling?
-                    myPic <- evalStateT (executeDrawing advMem gen) (makeMyDrawer c)
-                    return (Pictures[Blank], myPic)
 
 modToPic :: (Picture,Picture) -> Picture
 modToPic (x,y) = x
@@ -122,8 +120,6 @@ execProbMap pM m gen = do
                                      execAtoms v m gen
                         Nothing -> do
                                     return()
-                    return ()
-
 
 execAtoms :: [Atom] -> AdvMem -> Int ->  MyState ()
 execAtoms [] _ _ = return ()
@@ -176,7 +172,6 @@ parseAndEvaluate s = do
 
 eval :: System -> LSystem
 eval (System h r) = do
-                    --tell ["Evaluating Headers"]
                     headers <- evalHeaders h
                     rules <- evalRules r
                     return ()
@@ -197,18 +192,23 @@ evalHeader :: Header -> LSystem
 evalHeader h = case h of
                 Axiom axiom -> do
                             AdvMem ax ang mem <- get
-                            --tell ["Found Axiom " ++ show axiom]
                             put (AdvMem axiom ang mem)
 
                 Angle int -> do
                             AdvMem ax ang mem <- get
-                            --tell ["Found Angle " ++ show int]
                             put (AdvMem ax int mem)
 
 
 evalRules :: [Rule] -> LSystem
 evalRules [] = do
-              -- TODO Error Handling
+              AdvMem ax ang mem <- get
+              let rules = M.keys mem
+              let maxProbs = foldr (\i acc -> (fst (M.findMax (M.findWithDefault M.empty i mem))):acc) [] rules
+              let minOfMaxProbs = foldr (min) 1.0 maxProbs
+              let maxOfMaxProbs = foldr (max) 1.0 maxProbs
+              case (minOfMaxProbs, maxOfMaxProbs) of
+                (1.0,1.0) -> return ()
+                _ ->  throwError "Error: Probabilities don't add up"
               return ()
 evalRules (x:xs) = do
                     evalFirst <- evalRule x
@@ -226,7 +226,7 @@ evalRule (Rule i atoms) = do
 evalRule (RuleP i prob atoms) = do
             AdvMem ax ang mem <- get
             let probMapOfI = M.findWithDefault M.empty i mem
-            let probSum = (foldr (+) 0 (M.keys probMapOfI)) + prob
+            let probSum = (foldr (max) 0 (M.keys probMapOfI)) + prob
             let probMap = M.insert probSum atoms probMapOfI
             let newMap = M.insert i probMap mem
             put (AdvMem ax ang newMap)
