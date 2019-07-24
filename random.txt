@@ -1,0 +1,4 @@
+angle 45
+axiom X
+X -0.5> +FFFX
+X -0.5> -FFFX

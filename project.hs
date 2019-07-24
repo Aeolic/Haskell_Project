@@ -276,7 +276,7 @@ parseId = try (\token -> case token of
                               TId id -> Just id
                               _ -> Nothing)
 
-parseRule :: ParserC Token Rule --(Id parser?, many1 or many?)
+parseRule :: ParserC Token Rule
 parseRule = Rule <$> (parseAtom <* lit TAsgn) <*> (many1 parseAtom)
             <|>
             RuleP <$> parseAtom <*> parseProb <*> (many1 parseAtom)

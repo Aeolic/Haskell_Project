@@ -1,4 +1,5 @@
-angle 25
-axiom X
-X -> F-[[X]+X]+F[+FX]-X 
+angle 25 
+axiom X 
+X -0.5> F-[[X]+X]+F[+FX]-X 
+X -0.5> F+[[X]-X]-F[-FX]+X 
 F -> FF
